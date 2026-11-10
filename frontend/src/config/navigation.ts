@@ -7,7 +7,7 @@ export type NavItem = { name: string; href: string; icon: LucideIcon; badge?: "a
 export const navigation: NavItem[] = [
   { name: "Overview", href: "/dashboard", icon: LayoutDashboard },
   { name: "Reviews", href: "/reviews", icon: FileCheck2 },
-  { name: "Approvals", href: "/approvals", icon: CheckCircle2, badge: "approvals", roles: ["reviewer", "manager"] },
+  { name: "Approvals", href: "/approvals", icon: CheckCircle2, badge: "approvals", roles: ["reviewer", "manager", "brand_admin"] },
   { name: "Brand Kit", href: "/brand-kit", icon: BookOpen },
   { name: "Insights", href: "/insights", icon: LineChart, roles: ["manager", "brand_admin"] },
   { name: "Audit history", href: "/history", icon: Files, roles: ["manager", "brand_admin"] },

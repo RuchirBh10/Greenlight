@@ -20,7 +20,7 @@ from app.pipeline.engine import run_pipeline
 from app.schemas.finding import Decision, FindingOut, FindingPatch, FindingPatchOut
 from app.schemas.review import (CommentCreate, CommentOut, ReviewCreate, ReviewCreated, ReviewDetail,
                                 ReviewListItem, WorkflowOut)
-from app.services import ai_disclosure, brand_kit_service
+from app.services import ai_disclosure, brand_kit_service, routing_context
 
 REVIEWER_VISIBLE = ("in_review", "approved", "changes_requested")
 EDITABLE = ("scanned", "resolving", "changes_requested")
@@ -146,14 +146,17 @@ def list_reviews(db: Session, user: User) -> list[ReviewListItem]:
         .join(User, User.id == Review.creator_id)
         .outerjoin(Finding, Finding.review_id == Review.id)
         .group_by(Review.id, User.name).order_by(Review.updated_at.desc())).all()
-    return [ReviewListItem(id=r.id, title=r.title, creator=name, status=r.status, finding_count=n, updated_at=r.updated_at)
-            for r, name, n in rows]
+    routing = routing_context.for_reviews(db, [r for r, _, _ in rows])
+    return [ReviewListItem(id=r.id, title=r.title, creator=name, status=r.status, finding_count=n, updated_at=r.updated_at,
+                           assignee=routing[r.id][0], open_escalation=routing[r.id][1]) for r, name, n in rows]
 
 
 def get_review(db: Session, user: User, review_id: str) -> ReviewDetail:
     r = load_review(db, user, review_id)
+    assignee, escalation = routing_context.for_reviews(db, [r])[r.id]
     return ReviewDetail(id=r.id, title=r.title, content=_content(db, r), status=r.status, creator=db.get(User, r.creator_id).name,
-                        brand_kit_version=brand_kit_service.label(r.brand_kit_version), created_at=r.created_at, updated_at=r.updated_at)
+                        brand_kit_version=brand_kit_service.label(r.brand_kit_version), assignee=assignee, open_escalation=escalation,
+                        created_at=r.created_at, updated_at=r.updated_at)
 
 
 def get_findings(db: Session, user: User, review_id: str) -> list[FindingOut]:
@@ -237,6 +240,11 @@ def _decide_review(db: Session, user: User, review_id: str, outcome: str, note: 
     review = load_review(db, user, review_id)
     if review.status != "in_review":
         raise invalid(f"Only reviews that are in_review can be decided (this one is {review.status}).")
+    if review.assignee_id and review.assignee_id != user.id:
+        owner = db.get(User, review.assignee_id)
+        raise forbidden(f"This review is assigned to {owner.name if owner else 'another reviewer'}.")
+    if routing_context.open_escalation(db, review.id):
+        raise invalid("Resolve the open escalation before deciding.")
     if outcome == "approved" and _unresolved(db, review.id):
         raise invalid("Every finding must be edited or disputed before approval.")
     note = note.strip()

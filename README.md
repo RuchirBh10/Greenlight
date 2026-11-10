@@ -105,7 +105,7 @@ Sign in with a demo account (password `greenlight-demo`):
 cd backend
 pip install -r requirements-full.txt # adds sentence-transformers (large download)
 cp .env.example .env                 # set DATABASE_URL, JWT_SECRET, ANTHROPIC_API_KEY
-alembic upgrade head
+alembic upgrade head            # applies every migration in backend/alembic/versions
 python -m app.seed
 uvicorn app.main:app --port 8000
 ```
@@ -148,7 +148,7 @@ TEST_DATABASE_URL=postgresql://user:pw@localhost/greenlight_test pytest   # real
 backend/
   app/routers/      HTTP endpoints (auth, reviews, findings, approvals, brand_kit, insights)
   app/pipeline/     split, rules, retrieve, judge, verify, score
-  app/services/     workflow, Brand Kit, insights, AI disclosure
+  app/services/     workflow, activity (history, comments, versions), Brand Kit, insights, AI disclosure
   tests/
 frontend/
   src/lib/          api.ts (mock/live switch), mockData.ts, session.ts
@@ -176,13 +176,13 @@ Without a database attached, the backend falls back to a temporary SQLite file t
 
 ## Status and known limits
 
-Working: authentication and roles, the versioned Brand Kit, the full detection pipeline, the review workflow, insights, per-review AI disclosure, and a frontend verified end to end against both the mock and the real backend.
+Working: authentication and roles, the versioned Brand Kit, the full detection pipeline, the review workflow, a complete activity history with comments and draft version comparison, insights, per-review AI disclosure, and a frontend verified end to end against both the mock and the real backend.
 
 Not yet done:
 
 - Verified on PostgreSQL 16 with pgvector locally, but not yet on a live hosted Vercel/Neon deployment or against a live Claude key.
 - No labelled test set, so detection precision is unmeasured.
-- No endpoints to read a review's audit trail or its comments, to edit a draft directly, or to delete a Brand Kit source.
+- No endpoints to edit a draft directly, to delete a Brand Kit source, or to assign and escalate a review (planned).
 - No signup or password reset. Users come from the seed script.
 - No login rate limiting or error monitoring.
 - Text only. Image and PDF checks are not built.

@@ -17,6 +17,7 @@ from app.services.workflow_service import load_review, visible_reviews_query
 _DECISION_VERB = {"accepted": "Confirmed", "edited": "Edited", "disputed": "Marked not applicable"}
 _STATUS_LABEL = {"draft": "draft", "scanned": "needs attention", "resolving": "being resolved", "in_review": "in review",
                  "changes_requested": "changes requested", "approved": "approved"}
+_ROLE_LABEL = {"manager": "a manager", "brand_admin": "a brand admin"}
 # The explicit "approved" / "changes_requested" events already say this, so the matching status change is not repeated.
 _REDUNDANT_STATUS = ("approved", "changes_requested")
 
@@ -40,6 +41,12 @@ def _summary(e: AuditEvent, quote: str | None) -> str:
         return "Approved for publication"
     if t == "changes_requested":
         return "Requested changes"
+    if t == "review_assigned":
+        return f"Assigned to {d['assignee']}" if d.get("assignee") else "Removed the assigned reviewer"
+    if t == "review_escalated":
+        return f"Escalated to {_ROLE_LABEL.get(d.get('to_role'), d.get('to_role'))}"
+    if t == "escalation_resolved":
+        return "Resolved the escalation"
     if t == "status_changed":
         return f"Status changed from {_STATUS_LABEL.get(d.get('from'), d.get('from'))} to {_STATUS_LABEL.get(d.get('to'), d.get('to'))}"
     return t.replace("_", " ").capitalize()

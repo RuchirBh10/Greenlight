@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.finding import FindingType
+from app.schemas.routing import EscalationOut, Person
 
 ReviewStatus = Literal["draft", "scanned", "resolving", "in_review", "approved", "changes_requested"]
 
@@ -14,6 +15,8 @@ class ReviewListItem(BaseModel):
     creator: str
     status: ReviewStatus
     finding_count: int
+    assignee: Person | None = None
+    open_escalation: EscalationOut | None = None
     updated_at: datetime
 
 
@@ -36,6 +39,8 @@ class ReviewDetail(BaseModel):
     status: ReviewStatus
     creator: str
     brand_kit_version: str
+    assignee: Person | None = None
+    open_escalation: EscalationOut | None = None
     created_at: datetime
     updated_at: datetime
 

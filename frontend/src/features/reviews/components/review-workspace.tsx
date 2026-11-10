@@ -10,6 +10,7 @@ import { approveReview, decideFinding, requestChanges, rewriteFinding, useReview
 import type { FindingStatus } from "../types";
 import { AnnotatedContent } from "./annotated-content";
 import { CollaborationPanel } from "./collaboration-panel";
+import { ReviewRouting } from "./review-routing";
 import { FindingEvidence } from "./finding-evidence";
 import { FindingList } from "./finding-list";
 import { ReviewOutcome } from "./review-outcome";
@@ -95,7 +96,9 @@ export function ReviewWorkspace({ id }: { id: string }) {
           <FindingEvidence finding={current} canApply={canApply} canResolve={canResolve} busy={busy}
             position={current ? { index: findings.findIndex(f => f.id === current.id) + 1, total: findings.length, onStep: d => { const i = findings.findIndex(f => f.id === current.id); const n = findings[i + d]; if (n) setSelected(n.id); } } : undefined}
             onDecide={decide} onApply={() => current && rewrite(current.suggestion, "suggestion")} onRewrite={t => rewrite(t, "manual")} />
+          <ReviewRouting review={review} />
           <ReviewOutcome review={review} canDecide={can.decide(user?.role)} busy={busy}
+            blocked={review.openEscalation ? "Decisions are paused while an escalation is open." : review.assignee && review.assignee.id !== user?.id ? `This review is assigned to ${review.assignee.name}. Only they can approve or request changes.` : undefined}
             onApprove={note => run(async () => { const ok = await approveReview(id, note); if (!ok) throw new Error("Approval is blocked until every finding is edited or marked not applicable."); }, "Review approved. Every finding has a recorded decision.")}
             onRequestChanges={note => run(() => requestChanges(id, note), "Changes requested. The creator will see your note.", "info")} />
           <CollaborationPanel review={review} onSelectFinding={pick} />

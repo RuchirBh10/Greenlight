@@ -1,9 +1,9 @@
 import type {
-  ActivityEvent, AiDisclosure, ApiFinding, BrandSource, CommentResponse, CreateBrandSourceRequest,
-  CreateCommentRequest, CreateReviewRequest, CreateReviewResponse, FindingAction,
-  InsightGap, InsightsSummary, LoginRequest, LoginResponse, PatchFindingRequest,
-  PatchFindingResponse, ReviewDetail, ReviewListItem, SourceKind, WorkflowNoteRequest,
-  VersionResponse, WorkflowResponse,
+  ActivityEvent, AiDisclosure, ApiFinding, AssignRequest, AssignResponse, BrandSource, CommentResponse, CreateBrandSourceRequest,
+  CreateCommentRequest, CreateReviewRequest, CreateReviewResponse, EscalateRequest, EscalationResponse, FindingAction,
+  InsightGap, InsightsSummary, LoginRequest, LoginResponse, PatchFindingRequest, PatchFindingResponse,
+  ResolveEscalationRequest, ReviewDetail, ReviewListItem, SourceKind, TeamMember, VersionResponse, WorkflowNoteRequest,
+  WorkflowResponse,
 } from "@/types/contract";
 import { ApiError } from "./api-error";
 import { mockRequest } from "./mockData";
@@ -139,6 +139,11 @@ export const api = {
   getVersions: (reviewId: string) => request<VersionResponse[]>(`/reviews/${enc(reviewId)}/versions`),
   getRecentActivity: (limit = 100) => request<ActivityEvent[]>(`/activity?limit=${limit}`),
   addComment: (reviewId: string, body: CreateCommentRequest) => request<CommentResponse>(`/reviews/${enc(reviewId)}/comments`, json("POST", body)),
+  getReviewers: () => request<TeamMember[]>("/team/reviewers"),
+  assignReview: (reviewId: string, body: AssignRequest) => request<AssignResponse>(`/reviews/${enc(reviewId)}/assign`, json("POST", body)),
+  escalateReview: (reviewId: string, body: EscalateRequest) => request<EscalationResponse>(`/reviews/${enc(reviewId)}/escalate`, json("POST", body)),
+  resolveEscalation: (reviewId: string, escalationId: string, body: ResolveEscalationRequest) =>
+    request<EscalationResponse>(`/reviews/${enc(reviewId)}/escalations/${enc(escalationId)}/resolve`, json("POST", body)),
   approveReview: (reviewId: string, body: WorkflowNoteRequest) => request<WorkflowResponse>(`/reviews/${enc(reviewId)}/approve`, json("POST", body)),
   requestChanges: (reviewId: string, body: WorkflowNoteRequest) => request<WorkflowResponse>(`/reviews/${enc(reviewId)}/request-changes`, json("POST", body)),
 

@@ -1,4 +1,4 @@
-import { Bot, CheckCircle2, FilePlus2, Gavel, MessageSquare, Pencil, type LucideIcon } from "lucide-react";
+import { Bot, CheckCircle2, FilePlus2, Gavel, MessageSquare, Pencil, UserCheck, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { formatDateTime } from "@/lib/format";
 import { ROLE_LABEL } from "@/lib/session";
@@ -12,6 +12,7 @@ export const auditMeta: Record<AuditKind, { icon: LucideIcon; tone: string; labe
   finding: { icon: Gavel, tone: "bg-warning/10 text-warning", label: "Decision" },
   edit: { icon: Pencil, tone: "bg-success/10 text-success", label: "Edit" },
   comment: { icon: MessageSquare, tone: "bg-info/10 text-info", label: "Comment" },
+  routing: { icon: UserCheck, tone: "bg-warning/10 text-warning", label: "Routing" },
   status: { icon: CheckCircle2, tone: "bg-success/10 text-success", label: "Status" },
 };
 

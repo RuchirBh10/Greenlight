@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { LogOut, Plus, Settings2, Sparkles } from "lucide-react";
 import { navFor } from "@/config/navigation";
 import { site } from "@/config/site";
+import { approvalsBadge } from "@/features/reviews/lib/queue";
 import { useReviews } from "@/features/reviews/lib/store";
 import { Avatar } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -14,7 +15,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const reviews = useReviews();
   const user = useSession();
-  const waiting = reviews.filter(r => r.status === "In review").length;
+  const waiting = approvalsBadge(reviews, user?.role, user?.id);
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
   const quiet = "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-semibold text-rail-ink/60 transition hover:bg-rail-ink/5 hover:text-rail-ink";
 

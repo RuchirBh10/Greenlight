@@ -27,10 +27,10 @@ def test_reviews_and_findings(client, h):
     created = submit(client, h["creator"])
     assert set(created) == {"id", "status", "finding_count"} and created["id"].startswith("CL-")
     listing = client.get("/reviews", headers=h["creator"]).json()
-    assert set(listing[0]) == {"id", "title", "creator", "status", "finding_count", "updated_at"}
+    assert set(listing[0]) == {"id", "title", "creator", "status", "finding_count", "assignee", "open_escalation", "updated_at"}
     assert listing[0]["creator"] == "Aarav Mehta"
     detail = client.get(f"/reviews/{created['id']}", headers=h["creator"]).json()
-    assert set(detail) == {"id", "title", "content", "status", "creator", "brand_kit_version", "created_at", "updated_at"}
+    assert set(detail) == {"id", "title", "content", "status", "creator", "brand_kit_version", "assignee", "open_escalation", "created_at", "updated_at"}
     f = client.get(f"/reviews/{created['id']}/findings", headers=h["creator"]).json()[0]
     assert set(f) == FINDING_KEYS and set(f["span"]) == {"start", "end", "text"}
     assert set(f["source"]) == {"kind", "id", "version"} and set(f["suggestion"]) == {"text", "fact_id", "applied"}

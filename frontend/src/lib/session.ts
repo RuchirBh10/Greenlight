@@ -74,6 +74,7 @@ export const can = {
   resolveFindings: (r?: UserRole) => r === "creator",
   decide: (r?: UserRole) => r === "reviewer",
   editBrandKit: (r?: UserRole) => r === "brand_admin",
-  seeApprovals: (r?: UserRole) => r === "reviewer" || r === "manager",
+  seeApprovals: (r?: UserRole) => r === "reviewer" || r === "manager" || r === "brand_admin",
+  assign: (r?: UserRole) => r === "manager" || r === "brand_admin",
   seeGaps: (r?: UserRole) => r === "brand_admin",
 };

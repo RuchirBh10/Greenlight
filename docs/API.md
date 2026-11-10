@@ -55,6 +55,8 @@
   "creator": "Aarav Mehta",
   "status": "in_review",
   "finding_count": 3,
+  "assignee": { "id": "U-3", "name": "Priya Nair" },
+  "open_escalation": null,
   "updated_at": "2026-11-02T10:42:00Z"
 }]
 ```
@@ -79,6 +81,8 @@
   "status": "in_review",
   "creator": "Aarav Mehta",
   "brand_kit_version": "v3",
+  "assignee": null,
+  "open_escalation": null,
   "created_at": "2026-11-02T10:00:00Z",
   "updated_at": "2026-11-02T10:42:00Z"
 }
@@ -162,6 +166,33 @@
   ] }
 ```
 
+### Routing: assignment and escalation
+
+`GET /team/reviewers` (manager, brand_admin) returns `TeamMember[]`: `{ "id": "U-3", "name": "Priya Nair", "role": "reviewer" }`.
+
+`POST /reviews/{id}/assign` (manager, brand_admin). `reviewer_id: null` removes the assignee. Not allowed on an approved review. `reviewer_id` must be a reviewer in the workspace (422).
+```json
+{ "reviewer_id": "U-3", "note": "You know this brand" }          // request
+{ "review_id": "CL-2084", "assignee": { "id": "U-3", "name": "Priya Nair" } }   // 200
+```
+Once a review has an assignee, **only that reviewer** can approve, request changes or escalate it (403 for other reviewers). Repeating the same assignment changes nothing and records nothing.
+
+`POST /reviews/{id}/escalate` (reviewer only, review must be `in_review`). `to_role` is `manager` or `brand_admin`; `reason` must not be blank. Only one escalation can be open per review (422).
+```json
+{ "to_role": "brand_admin", "reason": "Is 'carbon-neutral' covered by an approved fact?" }   // request
+// 201 EscalationResponse
+{ "id": "ES-1", "review_id": "CL-2084", "status": "open", "to_role": "brand_admin", "reason": "...",
+  "raised_by": { "id": "U-3", "name": "Priya Nair" }, "created_at": "2026-11-02T11:00:00Z",
+  "resolved_by": null, "resolved_at": null, "resolution": "" }
+```
+While an escalation is open, **approve and request-changes return 422** ("Resolve the open escalation before deciding.").
+
+`POST /reviews/{id}/escalations/{escalation_id}/resolve` with `{ "resolution": "..." }`. Only a user whose role equals the escalation's `to_role` may resolve it (403 otherwise). Returns the escalation with `status: "resolved"`, `resolved_by`, `resolved_at`, `resolution`.
+
+`assignee` (`{id, name}` or `null`) and `open_escalation` (an `EscalationResponse` or `null`) are now part of both `GET /reviews` items and `GET /reviews/{id}`.
+
+Escalating and resolving also post a line to the review's discussion (`Escalated to brand admin: ...`, `Escalation resolved: ...`). New activity event types: `review_assigned`, `review_escalated`, `escalation_resolved`.
+
 ### Activity and history
 
 `GET /reviews/{id}/activity` returns `ActivityEvent[]` for one review, **oldest first**. It uses the same visibility as the review.
@@ -180,7 +211,7 @@
     "detail": { "finding_id": "FD-1001", "action": "disputed", "quote": "#1" }, "review_id": "CL-2084", "review_title": null }
 ]
 ```
-`actor` is `null` for the system (the automated check). `type` is one of `review_submitted`, `scan_completed`, `content_edited`, `finding_decision`, `comment_added`, `status_changed`, `approved`, `changes_requested`. `summary` is ready to display. A `status_changed` event that only repeats an `approved` / `changes_requested` event is not listed twice. `comment_added` carries the comment text in `detail.text`.
+`actor` is `null` for the system (the automated check). `type` is one of `review_submitted`, `scan_completed`, `content_edited`, `finding_decision`, `comment_added`, `status_changed`, `approved`, `changes_requested`, `review_assigned`, `review_escalated`, `escalation_resolved`. `summary` is ready to display. A `status_changed` event that only repeats an `approved` / `changes_requested` event is not listed twice. `comment_added` carries the comment text in `detail.text`.
 
 `GET /activity?limit=100` returns the same events across every review the caller can see, **newest first** (`limit` 1 to 200). `review_title` is filled in here.
 
@@ -202,9 +233,9 @@
 | Role | Can |
 |---|---|
 | creator | Submit drafts, view own findings, accept/edit/dispute, comment on own reviews |
-| manager | View team queue, comment, view insights (assign and escalate: planned, v6.2) |
-| reviewer | View escalated items with evidence, comment, approve, request changes |
-| brand_admin | Manage the Brand Kit, view guideline-gap insights, comment |
+| manager | View team queue, comment, assign reviewers, resolve escalations sent to managers, view insights |
+| reviewer | View items in review with evidence, comment, approve, request changes, escalate (only items assigned to them, or unassigned) |
+| brand_admin | Manage the Brand Kit, view guideline-gap insights, comment, assign reviewers, resolve escalations sent to brand admins |
 
 The AI has no role. It cannot approve, reject or change content.
 
@@ -240,7 +271,7 @@ Findings can only be decided while the review is `scanned`, `resolving` or `chan
 
 1. ~~No way to read comments.~~ **Done (v6.1):** `GET /reviews/{id}/comments`.
 2. ~~No way to read the audit trail.~~ **Done (v6.1):** `GET /reviews/{id}/activity` and `GET /activity`.
-3. **No escalate/assign endpoint** (planned, v6.2), although the manager role lists "assign, escalate". Today a review reaches `in_review` automatically once every finding is resolved.
+3. ~~No escalate/assign endpoint.~~ **Done (v6.2):** see "Routing" above.
 4. **No `GET /auth/me`** to restore the session after a page refresh (the token alone does not carry the user's name).
 5. **No re-scan after edits.** Edits are applied to the text and recorded, but findings are not re-run.
 

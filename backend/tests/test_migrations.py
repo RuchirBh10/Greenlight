@@ -3,6 +3,7 @@ import os
 
 import pytest
 from alembic import command
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect, text
 
 from app import migrations
@@ -35,7 +36,9 @@ def test_prepare_database_is_repeatable_and_adopts_an_old_database():
     migrations.prepare_database()
     migrations.prepare_database()                                    # running it twice changes nothing
     insp = inspect(eng)
-    assert "finding_id" in [col["name"] for col in insp.get_columns("comment")]
+    assert "finding_id" in [col["name"] for col in insp.get_columns("comment")]            # 0002
+    assert "assignee_id" in [col["name"] for col in insp.get_columns("review")]            # 0003
+    assert "escalation" in insp.get_table_names()
     with eng.connect() as c:
         assert c.execute(text("SELECT name FROM workspace WHERE id='W-X'")).scalar() == "kept"
-        assert c.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0002"
+        assert c.execute(text("SELECT version_num FROM alembic_version")).scalar() == ScriptDirectory.from_config(migrations._config()).get_current_head()

@@ -10,11 +10,13 @@ type Props = {
   /** Only reviewers can decide; everyone else sees the state read-only. */
   canDecide: boolean;
   busy?: boolean;
+  /** Why the reviewer cannot decide right now (an open escalation, or it is assigned to someone else). */
+  blocked?: string;
   onApprove: (note: string) => void;
   onRequestChanges: (note: string) => void;
 };
 
-export function ReviewOutcome({ review, canDecide, busy, onApprove, onRequestChanges }: Props) {
+export function ReviewOutcome({ review, canDecide, busy, blocked, onApprove, onRequestChanges }: Props) {
   const [note, setNote] = useState("");
   const blockers = approvalBlockerCount(review);
   const approved = review.status === "Approved";
@@ -25,6 +27,8 @@ export function ReviewOutcome({ review, canDecide, busy, onApprove, onRequestCha
       <div className="p-5">
         {approved ? (
           <div className="flex items-center gap-3 rounded-xl border border-success/25 bg-success/10 p-4 text-sm font-semibold text-success"><CheckCheck size={18} /> Approved for publication</div>
+        ) : canDecide && awaiting && blocked ? (
+          <p className="rounded-xl border border-warning/25 bg-warning/10 p-4 text-sm leading-6 text-ink/85">{blocked}</p>
         ) : canDecide && awaiting ? (
           <div className="space-y-3">
             <Textarea rows={2} value={note} onChange={e => setNote(e.target.value)} aria-label="Decision note" placeholder="Note for the creator (required when requesting changes)" />

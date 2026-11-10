@@ -14,6 +14,7 @@ class Review(Base):
     id: Mapped[str] = mapped_column(String(20), primary_key=True)
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspace.id"), index=True)
     creator_id: Mapped[str] = mapped_column(ForeignKey("app_user.id"), index=True)
+    assignee_id: Mapped[str | None] = mapped_column(ForeignKey("app_user.id"), nullable=True, index=True)  # the reviewer responsible
     title: Mapped[str] = mapped_column(String(300))
     intent_note: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(20), default="draft", index=True)

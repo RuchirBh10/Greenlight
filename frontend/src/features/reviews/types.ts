@@ -1,9 +1,10 @@
+import type { EscalationResponse, Person } from "@/types/contract";
 export type FindingSeverity = "High" | "Medium" | "Low";
 export type FindingStatus = "Open" | "Accepted" | "Edited" | "Disputed";
 export type ReviewStatus = "Needs attention" | "In review" | "Approved" | "Changes requested";
 export type AnalysisSource = "local-demo" | "api";
 /** How the timeline and the history filter group events. */
-export type AuditKind = "submitted" | "analysis" | "finding" | "edit" | "comment" | "status";
+export type AuditKind = "submitted" | "analysis" | "finding" | "edit" | "comment" | "routing" | "status";
 
 export const CHANNELS = ["Social media", "Website", "Email", "Presentation", "Advertisement", "Print"] as const;
 export const REVIEW_MODES = ["Full brand review", "Essential checks only"] as const;
@@ -50,6 +51,10 @@ export interface Review {
   source: AnalysisSource;
   summary?: string;
   findings: Finding[];
+  /** The reviewer responsible. Only they can decide once set. */
+  assignee?: Person;
+  /** While present, nobody can approve or request changes. */
+  openEscalation?: EscalationResponse;
 }
 
 export type ReviewInput = { title: string; channel: string; content: string; intent?: string; brandKit: string; mode: string };

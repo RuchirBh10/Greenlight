@@ -7,7 +7,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import errors
 from app.config import get_settings
-from app.routers import activity, approvals, auth, brand_kit, findings, insights, reviews
+from app.routers import activity, approvals, auth, brand_kit, findings, insights, reviews, routing
 
 settings = get_settings()
 settings.assert_safe()
@@ -24,7 +24,7 @@ app.add_exception_handler(StarletteHTTPException, errors.http_error_handler)
 app.add_exception_handler(RequestValidationError, errors.validation_error_handler)
 app.add_exception_handler(Exception, errors.unhandled_error_handler)
 
-for r in (auth, brand_kit, reviews, findings, approvals, insights, activity):
+for r in (auth, brand_kit, reviews, findings, approvals, insights, activity, routing):
     app.include_router(r.router)
 
 deploy.bootstrap()  # no-op except on Vercel

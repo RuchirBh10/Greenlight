@@ -9,13 +9,15 @@
  * so a screen that works on the mock works on the live backend. Fictional brand and people only.
  */
 import type {
-  ActivityEvent, ActivityEventType, AiDisclosure, ApiFinding, ApiSeverity, ApiUser, BrandSource, CommentResponse, FindingAction,
-  FindingType, InsightGap, InsightsSummary, LoginResponse, ReviewApiStatus, ReviewDetail, ReviewListItem, SourceKind,
-  UserRole, VersionResponse,
+  ActivityEvent, ActivityEventType, AiDisclosure, ApiFinding, ApiSeverity, ApiUser, BrandSource, CommentResponse, EscalationResponse,
+  FindingAction, FindingType, InsightGap, InsightsSummary, LoginResponse, Person, ReviewApiStatus, ReviewDetail, ReviewListItem,
+  SourceKind, UserRole, VersionResponse,
 } from "@/types/contract";
 import { ApiError } from "./api-error";
 
-const DB_KEY = "greenlight-mock-db-v2";
+const ROLE_NOUN: Record<string, string> = { manager: "manager", brand_admin: "brand admin" };
+
+const DB_KEY = "greenlight-mock-db-v3";
 export const MOCK_PASSWORD = "greenlight-demo";
 const LATENCY_MS = 120;
 
@@ -32,16 +34,20 @@ interface StoredSource extends BrandSource { kitVersion: number }
 interface Decision { action: FindingAction; reason: string; actor: string; editedText?: string | null }
 interface StoredFinding extends Omit<ApiFinding, "decision"> { reviewId: string; decisions: Decision[] }
 interface StoredVersion { content: string; reason: string; createdBy: string | null; createdAt: string }
+interface StoredEscalation {
+  id: string; reviewId: string; raisedBy: string; toRole: "manager" | "brand_admin"; reason: string; status: "open" | "resolved";
+  createdAt: string; resolvedBy: string | null; resolvedAt: string | null; resolution: string;
+}
 interface StoredReview {
-  id: string; title: string; creatorId: string; status: ReviewApiStatus; kitVersion: number;
+  id: string; title: string; creatorId: string; assigneeId: string | null; status: ReviewApiStatus; kitVersion: number;
   versions: StoredVersion[]; createdAt: string; updatedAt: string; decidedAt: string | null;
 }
 interface StoredEvent { pk: number; reviewId: string; type: ActivityEventType; actorId: string | null; detail: Record<string, unknown>; reason: string; at: string }
 interface StoredComment { id: string; reviewId: string; authorId: string; findingId: string | null; text: string; at: string }
 interface Db {
   kitVersion: number; sources: StoredSource[]; reviews: StoredReview[]; findings: StoredFinding[];
-  events: StoredEvent[]; comments: StoredComment[];
-  seq: { review: number; finding: number; comment: number; event: number; source: Record<string, number> };
+  events: StoredEvent[]; comments: StoredComment[]; escalations: StoredEscalation[];
+  seq: { review: number; finding: number; comment: number; event: number; escalation: number; source: Record<string, number> };
 }
 
 const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
@@ -131,8 +137,8 @@ const src = (id: string, kind: SourceKind, title: string, text: string, kitVersi
 
 function emptyDb(): Db {
   return {
-    kitVersion: 3, reviews: [], findings: [], events: [], comments: [],
-    seq: { review: 2001, finding: 1001, comment: 1, event: 1, source: { guideline: 6, fact: 22, term: 11, asset: 2 } },
+    kitVersion: 3, reviews: [], findings: [], events: [], comments: [], escalations: [],
+    seq: { review: 2001, finding: 1001, comment: 1, event: 1, escalation: 1, source: { guideline: 6, fact: 22, term: 11, asset: 2 } },
     sources: [
       src("G-4.2", "guideline", "Avoid unsupported superlatives", "Do not use claims such as '#1', 'best' or 'fastest' unless an approved fact substantiates them."),
       src("G-2.1", "guideline", "Use a helpful, confident tone", "Be clear and reassuring in the brand voice. Avoid pressure tactics, excessive exclamation marks and fear-based language."),
@@ -172,7 +178,7 @@ function transition(db: Db, r: StoredReview, to: ReviewApiStatus, actorId: strin
 
 function submit(db: Db, userId: string, title: string, text: string, at = new Date().toISOString()): StoredReview {
   const id = `CL-${db.seq.review++}`;
-  const review: StoredReview = { id, title, creatorId: userId, status: "draft", kitVersion: db.kitVersion,
+  const review: StoredReview = { id, title, creatorId: userId, assigneeId: null, status: "draft", kitVersion: db.kitVersion,
     versions: [{ content: text, reason: "submitted", createdBy: userId, createdAt: at }], createdAt: at, updatedAt: at, decidedAt: null };
   db.reviews.push(review);
   record(db, id, "review_submitted", userId, { brand_kit_version: `v${db.kitVersion}` }, "", at);
@@ -232,6 +238,41 @@ function conclude(db: Db, r: StoredReview, reviewer: MockUser, outcome: "approve
   if (note) comment(db, r, reviewer, note, null, at, false);
 }
 
+const personOf = (id: string): Person => ({ id, name: userById(id)?.name ?? "Unknown" });
+const toEscalation = (e: StoredEscalation): EscalationResponse => ({
+  id: e.id, review_id: e.reviewId, raised_by: personOf(e.raisedBy), to_role: e.toRole, reason: e.reason, status: e.status,
+  created_at: e.createdAt, resolved_by: e.resolvedBy ? personOf(e.resolvedBy) : null, resolved_at: e.resolvedAt, resolution: e.resolution,
+});
+const openEscalation = (db: Db, reviewId: string) => db.escalations.find(e => e.reviewId === reviewId && e.status === "open");
+const routing = (db: Db, r: StoredReview) => {
+  const open = openEscalation(db, r.id);
+  return { assignee: r.assigneeId ? personOf(r.assigneeId) : null, open_escalation: open ? toEscalation(open) : null };
+};
+
+/** Reviewer assignment. Passing null removes the assignee. Repeating the same assignment records nothing. */
+function assignReviewer(db: Db, r: StoredReview, by: MockUser, reviewerId: string | null, note = "", at = new Date().toISOString()) {
+  const target = reviewerId ? userById(reviewerId) : undefined;
+  if (reviewerId && (!target || target.role !== "reviewer")) throw invalid("reviewer_id must be a reviewer in this workspace.");
+  if (r.assigneeId === (target?.id ?? null)) return;
+  r.assigneeId = target?.id ?? null;
+  r.updatedAt = at;
+  record(db, r.id, "review_assigned", by.id, { assignee_id: target?.id ?? null, assignee: target?.name ?? null }, note, at);
+}
+function escalateReview(db: Db, r: StoredReview, by: MockUser, toRole: "manager" | "brand_admin", reason: string, at = new Date().toISOString()): StoredEscalation {
+  const e: StoredEscalation = { id: `ES-${db.seq.escalation++}`, reviewId: r.id, raisedBy: by.id, toRole, reason, status: "open", createdAt: at, resolvedBy: null, resolvedAt: null, resolution: "" };
+  db.escalations.push(e);
+  r.updatedAt = at;
+  record(db, r.id, "review_escalated", by.id, { escalation_id: e.id, to_role: toRole }, reason, at);
+  comment(db, r, by, `Escalated to ${ROLE_NOUN[toRole]}: ${reason}`, null, at, false);
+  return e;
+}
+function resolveEscalationOf(db: Db, r: StoredReview, e: StoredEscalation, by: MockUser, resolution: string, at = new Date().toISOString()) {
+  e.status = "resolved"; e.resolvedBy = by.id; e.resolvedAt = at; e.resolution = resolution;
+  r.updatedAt = at;
+  record(db, r.id, "escalation_resolved", by.id, { escalation_id: e.id }, resolution, at);
+  comment(db, r, by, `Escalation resolved: ${resolution}`, null, at, false);
+}
+
 function seedDb(): Db {
   const db = emptyDb();
   const [aarav, harshit, priya] = [MOCK_USERS[0], MOCK_USERS[1], MOCK_USERS[2]];
@@ -249,6 +290,8 @@ function seedDb(): Db {
   db.findings.filter(f => f.reviewId === ready.id).forEach((f, i) =>
     decide(db, ready, f, aarav, { action: "edited", reason: "", editedText: "Zippy Bottle" }, wait(300, i * 40)));
 
+  assignReviewer(db, ready, harshit, priya.id, "Priya knows this product line.", ago(110));
+
   // 3. Approved by a reviewer.
   const done = submit(db, aarav.id, "October product update",
     "October product update\n\nThe Zippy Bottle has a 750 ml capacity. Fast delivery is available in select cities.", ago(1800));
@@ -260,6 +303,13 @@ function seedDb(): Db {
   db.findings.filter(f => f.reviewId === bounced.id).forEach((f, i) =>
     decide(db, bounced, f, aarav, { action: "disputed", reason: "Approved by legal for this campaign.", editedText: null }, wait(2500, i * 40)));
   conclude(db, bounced, priya, "changes_requested", "Disputes need a written legal sign-off. Please attach it.", ago(2200));
+
+  // 5. In review, but the reviewer is not sure the claim is covered: escalated to a brand admin.
+  const green = submit(db, aarav.id, "Sustainability announcement",
+    "Our new bottle is carbon-neutral and made with 100% recycled steel.", ago(400));
+  db.findings.filter(f => f.reviewId === green.id).forEach((f, i) =>
+    decide(db, green, f, aarav, { action: "disputed", reason: "Sustainability team confirmed both statements.", editedText: null }, wait(380, i * 40)));
+  escalateReview(db, green, priya, "brand_admin", "Is there an approved fact for the carbon-neutral claim? I can't find one in the Brand Kit.", ago(90));
   return db;
 }
 
@@ -312,6 +362,9 @@ function summarise(e: StoredEvent, quote?: string): string {
     case "comment_added": return "Commented";
     case "approved": return "Approved for publication";
     case "changes_requested": return "Requested changes";
+    case "review_assigned": return d.assignee ? `Assigned to ${d.assignee}` : "Removed the assigned reviewer";
+    case "review_escalated": return `Escalated to ${d.to_role === "brand_admin" ? "a brand admin" : "a manager"}`;
+    case "escalation_resolved": return "Resolved the escalation";
     case "status_changed": return `Status changed from ${STATUS_LABEL[String(d.from)] ?? d.from} to ${STATUS_LABEL[String(d.to)] ?? d.to}`;
   }
 }
@@ -384,12 +437,12 @@ export async function mockRequest<T>(path: string, init: RequestInit = {}, token
     const rows = db.reviews.filter(r => canView(user, r)).sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
     out = rows.map(r => ({
       id: r.id, title: r.title, creator: userById(r.creatorId)?.name ?? "Unknown", status: r.status,
-      finding_count: db.findings.filter(f => f.reviewId === r.id).length, updated_at: r.updatedAt,
+      finding_count: db.findings.filter(f => f.reviewId === r.id).length, ...routing(db, r), updated_at: r.updatedAt,
     } satisfies ReviewListItem));
   } else if ((m = /^\/reviews\/([^/]+)$/.exec(route))) {
     const r = reviewFor(db, user, decodeURIComponent(m[1]));
     out = { id: r.id, title: r.title, content: content(r), status: r.status, creator: userById(r.creatorId)?.name ?? "Unknown",
-      brand_kit_version: `v${r.kitVersion}`, created_at: r.createdAt, updated_at: r.updatedAt } satisfies ReviewDetail;
+      brand_kit_version: `v${r.kitVersion}`, ...routing(db, r), created_at: r.createdAt, updated_at: r.updatedAt } satisfies ReviewDetail;
   } else if ((m = /^\/reviews\/([^/]+)\/findings$/.exec(route))) {
     const r = reviewFor(db, user, decodeURIComponent(m[1]));
     const rank = { high: 0, medium: 1, low: 2 };
@@ -427,10 +480,42 @@ export async function mockRequest<T>(path: string, init: RequestInit = {}, token
     if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw invalid("limit must be between 1 and 200.");
     const visible = new Map(db.reviews.filter(r => canView(user, r)).map(r => [r.id, r.title]));
     out = toActivity(db, db.events.filter(e => visible.has(e.reviewId)).sort((a, b) => b.pk - a.pk).slice(0, limit), visible);
+  } else if (route === "/team/reviewers") {
+    if (!["manager", "brand_admin"].includes(user.role)) throw forbidden("Only managers and brand admins can see who can be assigned.");
+    out = MOCK_USERS.filter(u => u.role === "reviewer").map(u => ({ id: u.id, name: u.name, role: u.role }));
+  } else if ((m = /^\/reviews\/([^/]+)\/assign$/.exec(route)) && method === "POST") {
+    if (!["manager", "brand_admin"].includes(user.role)) throw forbidden("Only managers and brand admins can assign a reviewer.");
+    const r = reviewFor(db, user, decodeURIComponent(m[1]));
+    if (r.status === "approved") throw invalid("An approved review cannot be reassigned.");
+    assignReviewer(db, r, user, typeof body.reviewer_id === "string" ? body.reviewer_id : null, text(body.note).trim());
+    out = { review_id: r.id, assignee: r.assigneeId ? personOf(r.assigneeId) : null };
+  } else if ((m = /^\/reviews\/([^/]+)\/escalate$/.exec(route)) && method === "POST") {
+    if (user.role !== "reviewer") throw forbidden("Only reviewers can escalate a review.");
+    const r = reviewFor(db, user, decodeURIComponent(m[1]));
+    if (r.status !== "in_review") throw invalid(`Only reviews that are in_review can be escalated (this one is ${r.status}).`);
+    if (r.assigneeId && r.assigneeId !== user.id) throw forbidden("This review is assigned to another reviewer.");
+    if (openEscalation(db, r.id)) throw invalid("This review already has an open escalation.");
+    const toRole = body.to_role;
+    if (toRole !== "manager" && toRole !== "brand_admin") throw invalid("to_role: must be manager or brand_admin");
+    const reason = text(body.reason).trim();
+    if (!reason) throw invalid("reason: must not be blank");
+    out = toEscalation(escalateReview(db, r, user, toRole, reason));
+  } else if ((m = /^\/reviews\/([^/]+)\/escalations\/([^/]+)\/resolve$/.exec(route)) && method === "POST") {
+    const r = reviewFor(db, user, decodeURIComponent(m[1]));
+    const e = db.escalations.find(x => x.id === decodeURIComponent(m![2]) && x.reviewId === r.id);
+    if (!e) throw notFound("Escalation not found.");
+    if (e.status !== "open") throw invalid("This escalation is already resolved.");
+    if (user.role !== e.toRole) throw forbidden(`Only a ${ROLE_NOUN[e.toRole]} can resolve this escalation.`);
+    const resolution = text(body.resolution).trim();
+    if (!resolution) throw invalid("resolution: must not be blank");
+    resolveEscalationOf(db, r, e, user, resolution);
+    out = toEscalation(e);
   } else if ((m = /^\/reviews\/([^/]+)\/(approve|request-changes)$/.exec(route)) && method === "POST") {
     if (user.role !== "reviewer") throw forbidden("Only reviewers can approve or request changes.");
     const r = reviewFor(db, user, decodeURIComponent(m[1]));
     if (r.status !== "in_review") throw invalid(`Only reviews that are in_review can be decided (this one is ${r.status}).`);
+    if (r.assigneeId && r.assigneeId !== user.id) throw forbidden(`This review is assigned to ${userById(r.assigneeId)?.name ?? "another reviewer"}.`);
+    if (openEscalation(db, r.id)) throw invalid("Resolve the open escalation before deciding.");
     const approving = m[2] === "approve";
     const note = text(body.note).trim();
     if (approving && unresolved(db, r.id)) throw invalid("Every finding must be edited or disputed before approval.");

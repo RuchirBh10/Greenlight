@@ -20,6 +20,8 @@ const STEPS: Step[] = [
     hint: "Every action on a review, with who did it, when and why. Add a comment, compare versions, see what AI was used.", here: "Open the Activity tab on the right. Try Discussion and Changes too." },
   { id: "approve", role: "reviewer", base: "/approvals", title: "Approve as a reviewer",
     hint: "Only a person can approve or send a draft back. The software never does.", here: "Press Approve on a review that is waiting for you." },
+  { id: "escalation", role: "brand_admin", base: "/reviews/", title: "Resolve an escalation",
+    hint: "A reviewer asked a question they could not answer alone. Nobody can decide until it is resolved.", here: "Press Resolve escalation, write your ruling, and send it." },
   { id: "kit", role: "brand_admin", base: "/brand-kit", title: "Update the Brand Kit",
     hint: "Add a rule, fact or term. The very next review is checked against it.", here: "Press Add source, fill in a term, and save." },
   { id: "insights", role: "manager", base: "/insights", title: "See the Insights",
@@ -47,6 +49,7 @@ export function TourBar() {
   const target = (s: Step): string => {
     if (s.id === "submit") return "/reviews/new?sample=risky";
     if (s.id === "approve") return "/approvals";
+    if (s.id === "escalation") { const e = reviews.find(r => r.openEscalation?.to_role === "brand_admin"); return e ? `/reviews/${e.id}` : "/approvals"; }
     if (s.id === "kit") return "/brand-kit";
     if (s.id === "insights") return "/insights";
     const mine = user.role === "creator" ? reviews.find(r => r.status === "Needs attention" && r.findings.some(f => f.status === "Open")) : undefined;

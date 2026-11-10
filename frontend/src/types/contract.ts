@@ -30,12 +30,37 @@ export interface BrandSource {
 }
 export interface CreateBrandSourceRequest { kind: SourceKind; title: string; text: string }
 
+export interface Person { id: string; name: string }
+export interface TeamMember extends Person { role: UserRole }
+
+export interface EscalationResponse {
+  id: string;
+  review_id: string;
+  raised_by: Person;
+  /** The role that has to resolve it. */
+  to_role: "manager" | "brand_admin";
+  reason: string;
+  status: "open" | "resolved";
+  created_at: string;
+  resolved_by: Person | null;
+  resolved_at: string | null;
+  resolution: string;
+}
+export interface AssignRequest { reviewer_id: string | null; note?: string }
+export interface AssignResponse { review_id: string; assignee: Person | null }
+export interface EscalateRequest { to_role: "manager" | "brand_admin"; reason: string }
+export interface ResolveEscalationRequest { resolution: string }
+
 export interface ReviewListItem {
   id: string;
   title: string;
   creator: string;
   status: ReviewApiStatus;
   finding_count: number;
+  /** The reviewer responsible. Once set, only they can approve or request changes. */
+  assignee: Person | null;
+  /** While open, nobody can approve or request changes. */
+  open_escalation: EscalationResponse | null;
   updated_at: string;
 }
 export interface CreateReviewRequest { title: string; content: string; intent_note: string }
@@ -47,6 +72,8 @@ export interface ReviewDetail {
   status: ReviewApiStatus;
   creator: string;
   brand_kit_version: string;
+  assignee: Person | null;
+  open_escalation: EscalationResponse | null;
   created_at: string;
   updated_at: string;
 }
@@ -81,7 +108,8 @@ export interface CommentResponse { id: string; author: string; role: UserRole; t
 
 export type ActivityEventType =
   | "review_submitted" | "scan_completed" | "content_edited" | "finding_decision"
-  | "comment_added" | "status_changed" | "approved" | "changes_requested";
+  | "comment_added" | "status_changed" | "approved" | "changes_requested"
+  | "review_assigned" | "review_escalated" | "escalation_resolved";
 export interface ActivityEvent {
   id: string;
   type: ActivityEventType;

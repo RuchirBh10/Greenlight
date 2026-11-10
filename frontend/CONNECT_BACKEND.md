@@ -34,9 +34,13 @@ and that requesting changes without a note is rejected.
 | Reviews data layer | `src/features/reviews/lib/store.ts` |
 | Brand Kit data layer | `src/features/brand-kit/store.ts` |
 
+## Tests
+
+`npm run test:demo` checks the built-in demo backend. `npm run test:live` runs the same checks against a live backend (start it first; set `GREENLIGHT_API_URL` if it is not on `http://127.0.0.1:8000`). They drive the real data layer with no browser, so a behaviour is verified in both places.
+
 ## Known gaps that need a backend endpoint
 
 - `PATCH /reviews/{id}/content`, a reopen action and `DELETE /brand-kit/sources/{id}` are not in the contract, so those controls are not shown.
-- Assign and escalate (planned, v6.2) and image or structured inputs (planned, v8) are not in the contract yet.
+- Image and structured inputs (planned, v8) are not in the contract yet.
 
 History, comments and draft versions are read from the server (`/reviews/{id}/activity`, `/comments`, `/versions`, and `/activity` for the workspace-wide trail).

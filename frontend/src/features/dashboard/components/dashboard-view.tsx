@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowRight, CheckCircle2, ChevronRight, Clock3, ShieldAlert, Wand2 } from "lucide-react";
 import { Card, CardHeader, EmptyState, Skeleton, StatCard, StatusBadge, buttonClass } from "@/components/ui";
 import { openCount } from "@/features/reviews/lib/metrics";
+import { escalatedTo, needsRouting, reviewerCanDecide } from "@/features/reviews/lib/queue";
 import { useReviews, useReviewsLoaded } from "@/features/reviews/lib/store";
 import type { Review } from "@/features/reviews/types";
 import { api } from "@/lib/api";
@@ -12,11 +13,11 @@ import { useAsync } from "@/lib/use-api";
 import type { UserRole } from "@/types/contract";
 import { DashboardHero } from "./dashboard-hero";
 
-const FOCUS: Record<UserRole, { title: string; empty: string; pick: (r: Review) => boolean; cta: string }> = {
+const FOCUS: Record<UserRole, { title: string; empty: string; pick: (r: Review, me: string) => boolean; cta: string }> = {
   creator: { title: "Needs your attention", empty: "Nothing waiting on you.", pick: r => r.status === "Needs attention" || r.status === "Changes requested", cta: "Resolve" },
-  reviewer: { title: "Waiting for your decision", empty: "No reviews are waiting for a decision.", pick: r => r.status === "In review", cta: "Review" },
-  manager: { title: "In progress", empty: "Nothing is in progress.", pick: r => r.status !== "Approved", cta: "Open" },
-  brand_admin: { title: "In progress", empty: "Nothing is in progress.", pick: r => r.status !== "Approved", cta: "Open" },
+  reviewer: { title: "Waiting for your decision", empty: "No reviews are waiting for you.", pick: (r, me) => reviewerCanDecide(r, me), cta: "Review" },
+  manager: { title: "Needs routing or a ruling", empty: "Everything has an owner.", pick: r => needsRouting(r) || escalatedTo(r, "manager"), cta: "Open" },
+  brand_admin: { title: "Escalated to you", empty: "Nothing has been escalated to you.", pick: r => escalatedTo(r, "brand_admin"), cta: "Resolve" },
 };
 
 function Row({ r, cta }: { r: Review; cta?: string }) {
@@ -24,7 +25,7 @@ function Row({ r, cta }: { r: Review; cta?: string }) {
     <Link href={`/reviews/${r.id}`} className="group flex items-center gap-4 px-5 py-3.5 transition hover:bg-soft">
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium text-ink">{r.title}</div>
-        <div className="mt-0.5 truncate text-xs text-muted">{r.creator} · {openCount(r)} open · {relativeTime(r.updatedAt)}</div>
+        <div className="mt-0.5 truncate text-xs text-muted">{r.creator} · {openCount(r)} open{r.assignee ? ` · ${r.assignee.name}` : ""}{r.openEscalation ? " · escalated" : ""} · {relativeTime(r.updatedAt)}</div>
       </div>
       <StatusBadge>{r.status}</StatusBadge>
       {cta ? <span className="hidden items-center gap-1 text-xs font-semibold text-brand sm:flex">{cta} <ArrowRight size={13} /></span> : <ChevronRight size={15} className="text-muted" />}
@@ -39,7 +40,7 @@ export function DashboardView() {
   const summary = useAsync(() => api.getInsightsSummary()).data;
   const role = user?.role ?? "creator";
   const focus = FOCUS[role];
-  const next = reviews.filter(focus.pick).slice(0, 5);
+  const next = reviews.filter(r => focus.pick(r, user?.id ?? "")).slice(0, 5);
   const recent = [...reviews].sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt)).slice(0, 6);
   const first = (user?.name ?? "").split(" ")[0];
 

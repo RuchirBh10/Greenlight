@@ -65,5 +65,7 @@ export function reviewFromApi(
     content: detail.content, originalContent: meta?.original ?? detail.content, source,
     summary: `${mapped.length} potential issue${mapped.length === 1 ? "" : "s"} found. Human review is required.`,
     findings: mapped,
+    assignee: detail.assignee ?? undefined,
+    openEscalation: detail.open_escalation ?? undefined,
   };
 }

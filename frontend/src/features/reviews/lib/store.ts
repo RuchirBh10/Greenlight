@@ -38,11 +38,20 @@ async function fetchReview(id: string): Promise<Review | null> {
     return reviewFromApi(detail, findings, sources, metaStore.read()[key(id)], dataSource());
   } catch { return null; }
 }
-async function refreshOne(id: string) {
+async function refreshOne(id: string): Promise<Review | null> {
   const fresh = await fetchReview(id);
-  if (!fresh) return;
+  if (!fresh) return null;
   const exists = state.reviews.some(r => r.id === id);
   set({ reviews: exists ? state.reviews.map(r => (r.id === id ? fresh : r)) : [fresh, ...state.reviews] });
+  return fresh;
+}
+
+/** A background load can finish after a newer change. Never let it overwrite something fresher than what it fetched. */
+function mergeLoaded(fetched: Review[]): Review[] {
+  const current = new Map(state.reviews.map(r => [r.id, r]));
+  const merged = fetched.map(r => { const c = current.get(r.id); return c && +new Date(c.updatedAt) > +new Date(r.updatedAt) ? c : r; });
+  const known = new Set(fetched.map(r => r.id));
+  return [...state.reviews.filter(r => !known.has(r.id)), ...merged];
 }
 
 async function load() {
@@ -52,7 +61,7 @@ async function load() {
     const [list, kit] = await Promise.all([api.getReviews(), api.getBrandSources().catch(() => [] as BrandSource[])]);
     sources = new Map(kit.map(s => [s.id, s]));
     const reviews = (await Promise.all(list.map(item => fetchReview(item.id)))).filter((r): r is Review => r !== null);
-    set({ reviews, loaded: true, error: "" });
+    set({ reviews: mergeLoaded(reviews), loaded: true, error: "" });
   } catch (e) {
     set({ loaded: true, error: e instanceof Error ? e.message : "Could not load reviews." });
   } finally { loading = false; }
@@ -84,8 +93,7 @@ export async function createReview(input: ReviewInput): Promise<Review> {
   const created = await api.createReview({ title: input.title, content: input.content, intent_note: input.intent ?? "" });
   metaStore.update(m => ({ ...m, [key(created.id)]: { channel: input.channel, mode: input.mode, intent: input.intent, original: input.content } }));
   markTour("submit");
-  await refreshOne(created.id);
-  const review = state.reviews.find(r => r.id === created.id);
+  const review = await refreshOne(created.id);
   if (!review) throw new Error("The review was created but could not be loaded. Open it from the reviews list.");
   return review;
 }
@@ -122,5 +130,22 @@ export async function approveReview(id: string, note = ""): Promise<boolean> {
 }
 export async function requestChanges(id: string, note: string) {
   await api.requestChanges(id, { note });
+  await refreshOne(id);
+}
+
+/** Manager or brand admin. Pass null to remove the assignee. Once set, only that reviewer can decide. */
+export async function assignReview(id: string, reviewerId: string | null, note = "") {
+  await api.assignReview(id, { reviewer_id: reviewerId, note });
+  await refreshOne(id);
+}
+/** Reviewer only. Pauses decisions until the person it is sent to resolves it. */
+export async function escalateReview(id: string, toRole: "manager" | "brand_admin", reason: string) {
+  await api.escalateReview(id, { to_role: toRole, reason });
+  await refreshOne(id);
+}
+/** Only the role the escalation was sent to can resolve it. */
+export async function resolveEscalation(id: string, escalationId: string, resolution: string) {
+  await api.resolveEscalation(id, escalationId, { resolution });
+  markTour("escalation");
   await refreshOne(id);
 }
