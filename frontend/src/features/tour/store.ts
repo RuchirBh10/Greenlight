@@ -2,7 +2,8 @@
 import { isDemo } from "@/lib/api";
 import { createPersistentStore } from "@/lib/persistent-store";
 
-export type TourStep = "submit" | "evidence" | "resolve" | "approve" | "kit" | "insights";
+export type TourStep = "submit" | "evidence" | "resolve" | "audit" | "approve" | "kit" | "insights";
+export const TOUR_STEPS = 7;
 type TourState = { done: Partial<Record<TourStep, true>>; open: boolean };
 
 const initial = (): TourState => ({ done: {}, open: true });

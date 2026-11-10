@@ -80,7 +80,8 @@ def test_commenting_roles(client, h):
     rid = submit(client, h["creator"])["id"]
     assert client.post(f"/reviews/{rid}/comments", headers=h["creator"], json={"text": "hi"}).status_code == 201
     assert client.post(f"/reviews/{rid}/comments", headers=h["manager"], json={"text": "hi"}).status_code == 201
-    err(client.post(f"/reviews/{rid}/comments", headers=h["admin"], json={"text": "hi"}), 403, "forbidden")
+    assert client.post(f"/reviews/{rid}/comments", headers=h["admin"], json={"text": "hi"}).status_code == 201   # anyone who can open the review
+    err(client.post(f"/reviews/{rid}/comments", headers=h["reviewer"], json={"text": "hi"}), 404, "not_found")   # reviewers only see escalated work
 
 
 def test_guideline_gaps_are_brand_admin_only(client, h):

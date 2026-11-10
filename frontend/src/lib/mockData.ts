@@ -9,12 +9,13 @@
  * so a screen that works on the mock works on the live backend. Fictional brand and people only.
  */
 import type {
-  AiDisclosure, ApiFinding, ApiSeverity, ApiUser, BrandSource, FindingAction, FindingType,
-  InsightGap, InsightsSummary, LoginResponse, ReviewApiStatus, ReviewDetail, ReviewListItem, SourceKind,
+  ActivityEvent, ActivityEventType, AiDisclosure, ApiFinding, ApiSeverity, ApiUser, BrandSource, CommentResponse, FindingAction,
+  FindingType, InsightGap, InsightsSummary, LoginResponse, ReviewApiStatus, ReviewDetail, ReviewListItem, SourceKind,
+  UserRole, VersionResponse,
 } from "@/types/contract";
 import { ApiError } from "./api-error";
 
-const DB_KEY = "greenlight-mock-db-v1";
+const DB_KEY = "greenlight-mock-db-v2";
 export const MOCK_PASSWORD = "greenlight-demo";
 const LATENCY_MS = 120;
 
@@ -30,16 +31,21 @@ const userById = (id: string) => MOCK_USERS.find(u => u.id === id);
 interface StoredSource extends BrandSource { kitVersion: number }
 interface Decision { action: FindingAction; reason: string; actor: string; editedText?: string | null }
 interface StoredFinding extends Omit<ApiFinding, "decision"> { reviewId: string; decisions: Decision[] }
+interface StoredVersion { content: string; reason: string; createdBy: string | null; createdAt: string }
 interface StoredReview {
   id: string; title: string; creatorId: string; status: ReviewApiStatus; kitVersion: number;
-  versions: string[]; createdAt: string; updatedAt: string; decidedAt: string | null;
+  versions: StoredVersion[]; createdAt: string; updatedAt: string; decidedAt: string | null;
 }
+interface StoredEvent { pk: number; reviewId: string; type: ActivityEventType; actorId: string | null; detail: Record<string, unknown>; reason: string; at: string }
+interface StoredComment { id: string; reviewId: string; authorId: string; findingId: string | null; text: string; at: string }
 interface Db {
   kitVersion: number; sources: StoredSource[]; reviews: StoredReview[]; findings: StoredFinding[];
-  seq: { review: number; finding: number; comment: number; source: Record<string, number> };
+  events: StoredEvent[]; comments: StoredComment[];
+  seq: { review: number; finding: number; comment: number; event: number; source: Record<string, number> };
 }
 
 const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+const plus = (iso: string, seconds: number) => new Date(+new Date(iso) + seconds * 1000).toISOString();
 
 // ---- error helpers ------------------------------------------------------------------------------
 const fail = (status: number, code: string, message: string) =>
@@ -125,8 +131,8 @@ const src = (id: string, kind: SourceKind, title: string, text: string, kitVersi
 
 function emptyDb(): Db {
   return {
-    kitVersion: 3, reviews: [], findings: [],
-    seq: { review: 2001, finding: 1001, comment: 1, source: { guideline: 6, fact: 22, term: 11, asset: 2 } },
+    kitVersion: 3, reviews: [], findings: [], events: [], comments: [],
+    seq: { review: 2001, finding: 1001, comment: 1, event: 1, source: { guideline: 6, fact: 22, term: 11, asset: 2 } },
     sources: [
       src("G-4.2", "guideline", "Avoid unsupported superlatives", "Do not use claims such as '#1', 'best' or 'fastest' unless an approved fact substantiates them."),
       src("G-2.1", "guideline", "Use a helpful, confident tone", "Be clear and reassuring in the brand voice. Avoid pressure tactics, excessive exclamation marks and fear-based language."),
@@ -142,12 +148,36 @@ function emptyDb(): Db {
   };
 }
 
-function submit(db: Db, userId: string, title: string, content: string, minutesAgo: number): StoredReview {
+// ---- the workflow itself: shared by the request handlers and the demo seed, so both behave identically -------
+const REVIEWER_VISIBLE: ReviewApiStatus[] = ["in_review", "approved", "changes_requested"];
+const EDITABLE: ReviewApiStatus[] = ["scanned", "resolving", "changes_requested"];
+const TRANSITIONS: Record<ReviewApiStatus, ReviewApiStatus[]> = {
+  draft: ["scanned"], scanned: ["resolving", "in_review"], resolving: ["resolving", "in_review"],
+  in_review: ["approved", "changes_requested"], changes_requested: ["resolving", "in_review"], approved: [],
+};
+const content = (r: StoredReview) => r.versions[r.versions.length - 1].content;
+const latest = (f: StoredFinding) => f.decisions[f.decisions.length - 1] ?? null;
+const unresolved = (db: Db, id: string) => db.findings.filter(f => f.reviewId === id && (latest(f) === null || latest(f)!.action === "accepted")).length;
+
+function record(db: Db, reviewId: string, type: ActivityEventType, actorId: string | null, detail: Record<string, unknown> = {}, reason = "", at = new Date().toISOString()) {
+  db.events.push({ pk: db.seq.event++, reviewId, type, actorId, detail, reason, at });
+}
+/** An approval or change request is recorded as its own event, so the matching status change is not stored twice. */
+function transition(db: Db, r: StoredReview, to: ReviewApiStatus, actorId: string | null, reason = "", at = new Date().toISOString()) {
+  if (!TRANSITIONS[r.status].includes(to)) throw invalid(`A review cannot move from ${r.status} to ${to}.`);
+  if (r.status !== to && to !== "approved" && to !== "changes_requested") record(db, r.id, "status_changed", actorId, { from: r.status, to }, reason, at);
+  r.status = to;
+  r.updatedAt = at;
+}
+
+function submit(db: Db, userId: string, title: string, text: string, at = new Date().toISOString()): StoredReview {
   const id = `CL-${db.seq.review++}`;
-  const at = ago(minutesAgo);
-  const review: StoredReview = { id, title, creatorId: userId, status: "scanned", kitVersion: db.kitVersion, versions: [content], createdAt: at, updatedAt: at, decidedAt: null };
+  const review: StoredReview = { id, title, creatorId: userId, status: "draft", kitVersion: db.kitVersion,
+    versions: [{ content: text, reason: "submitted", createdBy: userId, createdAt: at }], createdAt: at, updatedAt: at, decidedAt: null };
   db.reviews.push(review);
-  for (const h of detect(content, db.sources)) {
+  record(db, id, "review_submitted", userId, { brand_kit_version: `v${db.kitVersion}` }, "", at);
+  const hits = detect(text, db.sources);
+  for (const h of hits) {
     db.findings.push({
       finding_id: `FD-${db.seq.finding++}`, reviewId: id, type: h.type, severity: h.severity,
       span: { start: h.start, end: h.end, text: h.text },
@@ -155,36 +185,81 @@ function submit(db: Db, userId: string, title: string, content: string, minutesA
       fact_match: null, reason: h.reason, confidence: h.confidence, method: "rule_based", suggestion: h.suggestion, decisions: [],
     });
   }
-  if (!db.findings.some(f => f.reviewId === id)) review.status = "in_review";
+  const done = plus(at, 2);
+  record(db, id, "scan_completed", null, { mode: "rules_only", findings: hits.length, dropped_unverified: 0 }, "", done);
+  transition(db, review, "scanned", null, "scan finished", done);
+  if (!hits.length) transition(db, review, "in_review", null, "no findings to resolve", done);
   return review;
+}
+
+interface DecisionInput { action: FindingAction; reason: string; editedText: string | null }
+/** Applies one creator decision to a finding. Validation of who may do it stays in the request handler. */
+function decide(db: Db, r: StoredReview, f: StoredFinding, actor: MockUser, input: DecisionInput, at = new Date().toISOString()): Decision {
+  let reason = input.reason.trim();
+  if (input.action === "edited") {
+    const edited = input.editedText;
+    if (!edited || !edited.trim()) throw invalid("edited_text is required when action is 'edited'.");
+    const current = content(r);
+    if (current.slice(f.span.start, f.span.end) !== f.span.text) throw invalid("The flagged text has changed; reload the review.");
+    const delta = edited.length - (f.span.end - f.span.start);
+    reason = reason || "Edited the flagged wording.";
+    r.versions.push({ content: current.slice(0, f.span.start) + edited + current.slice(f.span.end), reason, createdBy: actor.id, createdAt: at });
+    for (const o of db.findings) if (o.reviewId === r.id && o !== f && o.span.start >= f.span.end) o.span = { ...o.span, start: o.span.start + delta, end: o.span.end + delta };
+    f.span = { start: f.span.start, end: f.span.start + edited.length, text: edited };
+    if (f.suggestion) f.suggestion = { ...f.suggestion, applied: edited === f.suggestion.text };
+    record(db, r.id, "content_edited", actor.id, { finding_id: f.finding_id, version: r.versions.length }, reason, at);
+  }
+  const decision: Decision = { action: input.action, reason, actor: actor.id, editedText: input.action === "edited" ? input.editedText : null };
+  f.decisions.push(decision);
+  record(db, r.id, "finding_decision", actor.id, { finding_id: f.finding_id, action: input.action }, reason, at);
+  const done = unresolved(db, r.id) === 0;
+  transition(db, r, done ? "in_review" : "resolving", actor.id, done ? "all findings resolved" : "", at);
+  return decision;
+}
+
+function comment(db: Db, r: StoredReview, author: MockUser, text: string, findingId: string | null = null, at = new Date().toISOString(), logEvent = true): StoredComment {
+  const c: StoredComment = { id: `C-${db.seq.comment++}`, reviewId: r.id, authorId: author.id, findingId, text, at };
+  db.comments.push(c);
+  if (logEvent) record(db, r.id, "comment_added", author.id, { comment_id: c.id, ...(findingId ? { finding_id: findingId } : {}) }, "", at);
+  return c;
+}
+
+/** A reviewer's decision. A note is also added to the discussion thread so the creator sees it there. */
+function conclude(db: Db, r: StoredReview, reviewer: MockUser, outcome: "approved" | "changes_requested", note: string, at = new Date().toISOString()) {
+  transition(db, r, outcome, reviewer.id, note, at);
+  r.decidedAt = outcome === "approved" ? at : null;
+  record(db, r.id, outcome, reviewer.id, {}, note, at);
+  if (note) comment(db, r, reviewer, note, null, at, false);
 }
 
 function seedDb(): Db {
   const db = emptyDb();
-  const aarav = "U-1";
-  const risky = submit(db, aarav, "Summer launch announcement",
-    "Introducing the all-new Zippy bottle.\n\nIndia's #1 fastest delivery, guaranteed.\n\nGrab one today, or miss out!!!\n\nImage: banner.png", 190);
-  risky.updatedAt = ago(46);
+  const [aarav, harshit, priya] = [MOCK_USERS[0], MOCK_USERS[1], MOCK_USERS[2]];
+  const wait = (minutesAgo: number, offsetSeconds: number) => plus(ago(minutesAgo), offsetSeconds);
 
-  const ready = submit(db, aarav, "Product feature email",
-    "Hi there,\n\nMeet the Zippy bottle — made with BPA-free, food-grade stainless steel.\n\nIt ships this week.", 330);
-  for (const f of db.findings.filter(x => x.reviewId === ready.id)) {
-    f.decisions.push({ action: "edited", reason: "Edited the flagged wording.", actor: aarav, editedText: "Zippy Bottle" });
-    ready.versions.push(ready.versions[ready.versions.length - 1].replace(f.span.text, "Zippy Bottle"));
-    f.span = { start: f.span.start, end: f.span.start + "Zippy Bottle".length, text: "Zippy Bottle" };
-  }
-  ready.status = "in_review"; ready.updatedAt = ago(120);
+  // 1. Unresolved: a manager has already left a note.
+  const risky = submit(db, aarav.id, "Summer launch announcement",
+    "Introducing the all-new Zippy bottle.\n\nIndia's #1 fastest delivery, guaranteed.\n\nGrab one today, or miss out!!!\n\nImage: banner.png", ago(190));
+  comment(db, risky, harshit, "Please confirm the delivery cities with legal before this goes out.", null, ago(60));
+  risky.updatedAt = ago(60);
 
-  const done = submit(db, aarav, "October product update",
-    "October product update\n\nThe Zippy Bottle has a 750 ml capacity. Fast delivery is available in select cities.", 1800);
-  done.status = "approved"; done.decidedAt = ago(1500); done.updatedAt = ago(1500);
+  // 2. Resolved and waiting for a reviewer.
+  const ready = submit(db, aarav.id, "Product feature email",
+    "Hi there,\n\nMeet the Zippy bottle — made with BPA-free, food-grade stainless steel.\n\nIt ships this week.", ago(330));
+  db.findings.filter(f => f.reviewId === ready.id).forEach((f, i) =>
+    decide(db, ready, f, aarav, { action: "edited", reason: "", editedText: "Zippy Bottle" }, wait(300, i * 40)));
 
-  const bounced = submit(db, aarav, "Back-to-school banner",
-    "Back to school with the Zippy Bottle.\n\nOur best ever bottle, in the best colours.\n\nImage: school-banner.png", 2600);
-  for (const f of db.findings.filter(x => x.reviewId === bounced.id)) {
-    f.decisions.push({ action: "disputed", reason: "Approved by legal for this campaign.", actor: aarav });
-  }
-  bounced.status = "changes_requested"; bounced.updatedAt = ago(2200);
+  // 3. Approved by a reviewer.
+  const done = submit(db, aarav.id, "October product update",
+    "October product update\n\nThe Zippy Bottle has a 750 ml capacity. Fast delivery is available in select cities.", ago(1800));
+  conclude(db, done, priya, "approved", "Verified against F-18 and F-12.", ago(1500));
+
+  // 4. Sent back: the creator disputed everything, the reviewer wanted legal sign-off.
+  const bounced = submit(db, aarav.id, "Back-to-school banner",
+    "Back to school with the Zippy Bottle.\n\nOur best ever bottle, in the best colours.\n\nImage: school-banner.png", ago(2600));
+  db.findings.filter(f => f.reviewId === bounced.id).forEach((f, i) =>
+    decide(db, bounced, f, aarav, { action: "disputed", reason: "Approved by legal for this campaign.", editedText: null }, wait(2500, i * 40)));
+  conclude(db, bounced, priya, "changes_requested", "Disputes need a written legal sign-off. Please attach it.", ago(2200));
   return db;
 }
 
@@ -208,24 +283,9 @@ export function resetMockDb(): void {
   save();
 }
 
-// ---- the same state machine and visibility rules as the backend ---------------------------------
-const REVIEWER_VISIBLE: ReviewApiStatus[] = ["in_review", "approved", "changes_requested"];
-const EDITABLE: ReviewApiStatus[] = ["scanned", "resolving", "changes_requested"];
-const TRANSITIONS: Record<ReviewApiStatus, ReviewApiStatus[]> = {
-  draft: ["scanned"], scanned: ["resolving", "in_review"], resolving: ["resolving", "in_review"],
-  in_review: ["approved", "changes_requested"], changes_requested: ["resolving", "in_review"], approved: [],
-};
+// ---- visibility and read models ----------------------------------------------------------------
 const canView = (u: MockUser, r: StoredReview) =>
   u.role === "creator" ? r.creatorId === u.id : u.role === "reviewer" ? REVIEWER_VISIBLE.includes(r.status) : true;
-const content = (r: StoredReview) => r.versions[r.versions.length - 1];
-const latest = (f: StoredFinding) => f.decisions[f.decisions.length - 1] ?? null;
-const unresolved = (db: Db, id: string) => db.findings.filter(f => f.reviewId === id && (latest(f) === null || latest(f)!.action === "accepted")).length;
-
-function transition(r: StoredReview, to: ReviewApiStatus) {
-  if (!TRANSITIONS[r.status].includes(to)) throw invalid(`A review cannot move from ${r.status} to ${to}.`);
-  r.status = to;
-  r.updatedAt = new Date().toISOString();
-}
 function reviewFor(db: Db, u: MockUser, id: string): StoredReview {
   const r = db.reviews.find(x => x.id === id);
   if (!r || !canView(u, r)) throw notFound("Review not found.");
@@ -235,6 +295,43 @@ const toFinding = (f: StoredFinding): ApiFinding => {
   const { reviewId: _r, decisions: _d, ...rest } = f; void _r; void _d;
   const d = latest(f);
   return { ...rest, decision: d ? { action: d.action, reason: d.reason, actor: d.actor } : null };
+};
+
+const STATUS_LABEL: Record<string, string> = { draft: "draft", scanned: "needs attention", resolving: "being resolved", in_review: "in review",
+  changes_requested: "changes requested", approved: "approved" };
+const VERB: Record<string, string> = { accepted: "Confirmed", edited: "Edited", disputed: "Marked not applicable" };
+
+/** Same wording as the server's activity summaries, so the demo reads exactly like the live product. */
+function summarise(e: StoredEvent, quote?: string): string {
+  const d = e.detail;
+  switch (e.type) {
+    case "review_submitted": return d.brand_kit_version ? `Submitted for review (${d.brand_kit_version})` : "Submitted for review";
+    case "scan_completed": { const n = Number(d.findings ?? 0); return `Automated check finished: ${n} potential issue${n === 1 ? "" : "s"} (${d.mode === "rules_only" ? "rules only" : "full check"})`; }
+    case "content_edited": return `Edited the draft (version ${d.version ?? "?"})`;
+    case "finding_decision": return quote ? `${VERB[String(d.action)] ?? "Updated"} “${quote}”` : `${VERB[String(d.action)] ?? "Updated"} a finding`;
+    case "comment_added": return "Commented";
+    case "approved": return "Approved for publication";
+    case "changes_requested": return "Requested changes";
+    case "status_changed": return `Status changed from ${STATUS_LABEL[String(d.from)] ?? d.from} to ${STATUS_LABEL[String(d.to)] ?? d.to}`;
+  }
+}
+function toActivity(db: Db, rows: StoredEvent[], titles?: Map<string, string>): ActivityEvent[] {
+  return rows.map(e => {
+    const finding = db.findings.find(f => f.finding_id === e.detail.finding_id);
+    const text = db.comments.find(c => c.id === e.detail.comment_id)?.text;
+    const u = e.actorId ? userById(e.actorId) : undefined;
+    return {
+      id: `E-${e.pk}`, type: e.type, at: e.at,
+      actor: u ? { id: u.id, name: u.name, role: u.role } : null,
+      summary: summarise(e, finding?.span.text), reason: e.reason,
+      detail: { ...e.detail, ...(finding ? { quote: finding.span.text } : {}), ...(text ? { text } : {}) },
+      review_id: e.reviewId, review_title: titles?.get(e.reviewId) ?? null,
+    };
+  });
+}
+const toComment = (c: StoredComment): CommentResponse => {
+  const u = userById(c.authorId)!;
+  return { id: c.id, author: u.name, role: u.role as UserRole, text: c.text, created_at: c.at, finding_id: c.findingId };
 };
 
 // ---- request router -----------------------------------------------------------------------------
@@ -281,7 +378,7 @@ export async function mockRequest<T>(path: string, init: RequestInit = {}, token
     const title = text(body.title).trim(), draft = text(body.content);
     if (!title) throw invalid("title: field required");
     if (!draft.trim()) throw invalid("content: field required");
-    const r = submit(db, user.id, title, draft, 0);
+    const r = submit(db, user.id, title, draft);
     out = { id: r.id, status: r.status, finding_count: db.findings.filter(f => f.reviewId === r.id).length };
   } else if (route === "/reviews") {
     const rows = db.reviews.filter(r => canView(user, r)).sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
@@ -292,7 +389,7 @@ export async function mockRequest<T>(path: string, init: RequestInit = {}, token
   } else if ((m = /^\/reviews\/([^/]+)$/.exec(route))) {
     const r = reviewFor(db, user, decodeURIComponent(m[1]));
     out = { id: r.id, title: r.title, content: content(r), status: r.status, creator: userById(r.creatorId)?.name ?? "Unknown",
-      brand_kit_version: `v${r.kitVersion}`, updated_at: r.updatedAt } satisfies ReviewDetail;
+      brand_kit_version: `v${r.kitVersion}`, created_at: r.createdAt, updated_at: r.updatedAt } satisfies ReviewDetail;
   } else if ((m = /^\/reviews\/([^/]+)\/findings$/.exec(route))) {
     const r = reviewFor(db, user, decodeURIComponent(m[1]));
     const rank = { high: 0, medium: 1, low: 2 };
@@ -305,29 +402,31 @@ export async function mockRequest<T>(path: string, init: RequestInit = {}, token
     if (!EDITABLE.includes(r.status)) throw invalid(`Findings cannot be changed while the review is ${r.status}.`);
     const action = body.action as FindingAction;
     if (!["accepted", "edited", "disputed"].includes(action)) throw invalid("action: invalid value");
-    let reason = text(body.reason).trim();
-    if (action === "disputed" && !reason) throw invalid("A reason is required to dispute a finding.");
-    const edited = typeof body.edited_text === "string" ? body.edited_text : null;
-    if (action === "edited") {
-      if (!edited || !edited.trim()) throw invalid("edited_text is required when action is 'edited'.");
-      const current = content(r);
-      if (current.slice(f.span.start, f.span.end) !== f.span.text) throw invalid("The flagged text has changed; reload the review.");
-      const delta = edited.length - (f.span.end - f.span.start);
-      r.versions.push(current.slice(0, f.span.start) + edited + current.slice(f.span.end));
-      for (const o of db.findings) if (o.reviewId === r.id && o !== f && o.span.start >= f.span.end) o.span = { ...o.span, start: o.span.start + delta, end: o.span.end + delta };
-      f.span = { start: f.span.start, end: f.span.start + edited.length, text: edited };
-      if (f.suggestion) f.suggestion = { ...f.suggestion, applied: edited === f.suggestion.text };
-      reason = reason || "Edited the flagged wording.";
+    if (action === "disputed" && !text(body.reason).trim()) throw invalid("A reason is required to dispute a finding.");
+    const d = decide(db, r, f, user, { action, reason: text(body.reason), editedText: typeof body.edited_text === "string" ? body.edited_text : null });
+    out = { finding_id: f.finding_id, decision: { action: d.action, reason: d.reason, actor: d.actor } };
+  } else if ((m = /^\/reviews\/([^/]+)\/comments$/.exec(route))) {
+    const r = reviewFor(db, user, decodeURIComponent(m[1]));
+    if (method === "POST") {
+      const t = text(body.text).trim();
+      if (!t) throw invalid("text must not be blank");
+      const findingId = typeof body.finding_id === "string" ? body.finding_id : null;
+      if (findingId && !db.findings.some(f => f.finding_id === findingId && f.reviewId === r.id)) throw invalid("finding_id does not belong to this review.");
+      out = toComment(comment(db, r, user, t, findingId));
+    } else {
+      out = db.comments.filter(c => c.reviewId === r.id).map(toComment);
     }
-    f.decisions.push({ action, reason, actor: user.id, editedText: action === "edited" ? edited : null });
-    transition(r, unresolved(db, r.id) === 0 ? "in_review" : "resolving");
-    out = { finding_id: f.finding_id, decision: { action, reason, actor: user.id } };
-  } else if ((m = /^\/reviews\/([^/]+)\/comments$/.exec(route)) && method === "POST") {
-    if (!["creator", "manager"].includes(user.role)) throw forbidden("Only creators and managers can comment.");
-    reviewFor(db, user, decodeURIComponent(m[1]));
-    const t = text(body.text).trim();
-    if (!t) throw invalid("text: field required");
-    out = { id: `C-${db.seq.comment++}`, author: user.name, text: t, created_at: new Date().toISOString() };
+  } else if ((m = /^\/reviews\/([^/]+)\/activity$/.exec(route))) {
+    const r = reviewFor(db, user, decodeURIComponent(m[1]));
+    out = toActivity(db, db.events.filter(e => e.reviewId === r.id));
+  } else if ((m = /^\/reviews\/([^/]+)\/versions$/.exec(route))) {
+    const r = reviewFor(db, user, decodeURIComponent(m[1]));
+    out = r.versions.map((v, i): VersionResponse => ({ number: i + 1, content: v.content, reason: v.reason, created_by: v.createdBy ? userById(v.createdBy)?.name ?? null : null, created_at: v.createdAt }));
+  } else if (route === "/activity") {
+    const limit = Number(new URLSearchParams(query).get("limit") ?? 100);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw invalid("limit must be between 1 and 200.");
+    const visible = new Map(db.reviews.filter(r => canView(user, r)).map(r => [r.id, r.title]));
+    out = toActivity(db, db.events.filter(e => visible.has(e.reviewId)).sort((a, b) => b.pk - a.pk).slice(0, limit), visible);
   } else if ((m = /^\/reviews\/([^/]+)\/(approve|request-changes)$/.exec(route)) && method === "POST") {
     if (user.role !== "reviewer") throw forbidden("Only reviewers can approve or request changes.");
     const r = reviewFor(db, user, decodeURIComponent(m[1]));
@@ -336,8 +435,7 @@ export async function mockRequest<T>(path: string, init: RequestInit = {}, token
     const note = text(body.note).trim();
     if (approving && unresolved(db, r.id)) throw invalid("Every finding must be edited or disputed before approval.");
     if (!approving && !note) throw invalid("A note is required when requesting changes.");
-    transition(r, approving ? "approved" : "changes_requested");
-    r.decidedAt = approving ? new Date().toISOString() : null;
+    conclude(db, r, user, approving ? "approved" : "changes_requested", note);
     out = { id: r.id, status: r.status };
   } else if ((m = /^\/reviews\/([^/]+)\/ai-disclosure$/.exec(route))) {
     const r = reviewFor(db, user, decodeURIComponent(m[1]));

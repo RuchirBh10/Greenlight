@@ -153,7 +153,7 @@ def list_reviews(db: Session, user: User) -> list[ReviewListItem]:
 def get_review(db: Session, user: User, review_id: str) -> ReviewDetail:
     r = load_review(db, user, review_id)
     return ReviewDetail(id=r.id, title=r.title, content=_content(db, r), status=r.status, creator=db.get(User, r.creator_id).name,
-                        brand_kit_version=brand_kit_service.label(r.brand_kit_version), updated_at=r.updated_at)
+                        brand_kit_version=brand_kit_service.label(r.brand_kit_version), created_at=r.created_at, updated_at=r.updated_at)
 
 
 def get_findings(db: Session, user: User, review_id: str) -> list[FindingOut]:
@@ -216,19 +216,19 @@ def decide_finding(db: Session, user: User, finding_id: str, body: FindingPatch)
 
 # ---- comments, approval ---------------------------------------------------------------------------
 def add_comment(db: Session, user: User, review_id: str, body: CommentCreate) -> CommentOut:
-    if user.role not in ("creator", "manager"):
-        raise forbidden("Only creators and managers can comment.")
+    """Anyone who can open the review can discuss it. A comment may point at one finding of the same review."""
     review = load_review(db, user, review_id)
-    return _comment(db, user, review, body.text)
-
-
-def _comment(db: Session, user: User, review: Review, text: str) -> CommentOut:
-    c = Comment(id=f"C-{next_number(db, 'comment', 1)}", review_id=review.id, author_id=user.id, text=text.strip())
+    if body.finding_id is not None:
+        finding = db.get(Finding, body.finding_id)
+        if finding is None or finding.review_id != review.id:
+            raise invalid("finding_id does not belong to this review.")
+    c = Comment(id=f"C-{next_number(db, 'comment', 1)}", review_id=review.id, author_id=user.id,
+                finding_id=body.finding_id, text=body.text.strip())
     db.add(c)
     db.flush()
-    audit(db, user, review.workspace_id, review.id, "comment_added", {"comment_id": c.id})
+    audit(db, user, review.workspace_id, review.id, "comment_added", {"comment_id": c.id, **({"finding_id": c.finding_id} if c.finding_id else {})})
     db.commit()
-    return CommentOut(id=c.id, author=user.name, text=c.text, created_at=c.created_at)
+    return CommentOut(id=c.id, author=user.name, role=user.role, text=c.text, created_at=c.created_at, finding_id=c.finding_id)
 
 
 def _decide_review(db: Session, user: User, review_id: str, outcome: str, note: str) -> WorkflowOut:

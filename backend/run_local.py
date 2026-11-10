@@ -13,12 +13,12 @@ os.environ.setdefault("ALLOWED_ORIGIN", "http://localhost:3000")
 
 import uvicorn  # noqa: E402
 
-from app.database import Base, SessionLocal, ensure_extensions, engine  # noqa: E402
+from app.database import SessionLocal  # noqa: E402
+from app.migrations import prepare_database  # noqa: E402
 from app.models import User  # noqa: E402
 from app.seed import seed  # noqa: E402
 
-ensure_extensions()
-Base.metadata.create_all(engine)
+prepare_database()
 with SessionLocal() as db:
     has_users = db.query(User).first() is not None
 if not has_users:

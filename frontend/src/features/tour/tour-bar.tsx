@@ -16,6 +16,8 @@ const STEPS: Step[] = [
     hint: "See the exact quote, the approved source behind it, and why it was flagged.", here: "Click a highlighted phrase in the draft, or any finding in the list." },
   { id: "resolve", role: "creator", base: "/reviews/", title: "Resolve every finding",
     hint: "Apply a suggested fix, write your own, or dispute it with a reason. Then it goes to a reviewer.", here: "Apply a suggestion or dispute it with a reason. Repeat until the progress bar is full." },
+  { id: "audit", role: "creator", base: "/reviews/", title: "Open the audit trail",
+    hint: "Every action on a review, with who did it, when and why. Add a comment, compare versions, see what AI was used.", here: "Open the Activity tab on the right. Try Discussion and Changes too." },
   { id: "approve", role: "reviewer", base: "/approvals", title: "Approve as a reviewer",
     hint: "Only a person can approve or send a draft back. The software never does.", here: "Press Approve on a review that is waiting for you." },
   { id: "kit", role: "brand_admin", base: "/brand-kit", title: "Update the Brand Kit",

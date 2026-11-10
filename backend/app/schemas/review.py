@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.finding import FindingType
 
@@ -36,18 +36,30 @@ class ReviewDetail(BaseModel):
     status: ReviewStatus
     creator: str
     brand_kit_version: str
+    created_at: datetime
     updated_at: datetime
 
 
 class CommentCreate(BaseModel):
     text: str = Field(min_length=1, max_length=5000)
+    finding_id: str | None = None  # optional: the comment is about one finding of this review
+
+    @field_validator("text")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("text must not be blank")
+        return value
 
 
 class CommentOut(BaseModel):
     id: str
     author: str
+    role: str
     text: str
     created_at: datetime
+    finding_id: str | None = None
 
 
 class WorkflowNote(BaseModel):

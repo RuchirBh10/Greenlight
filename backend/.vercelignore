@@ -1,7 +1,6 @@
 .venv
 venv
 tests
-alembic
 __pycache__
 *.pyc
 *.db

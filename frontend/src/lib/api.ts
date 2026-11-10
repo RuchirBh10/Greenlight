@@ -1,9 +1,9 @@
 import type {
-  AiDisclosure, ApiFinding, BrandSource, CommentResponse, CreateBrandSourceRequest,
+  ActivityEvent, AiDisclosure, ApiFinding, BrandSource, CommentResponse, CreateBrandSourceRequest,
   CreateCommentRequest, CreateReviewRequest, CreateReviewResponse, FindingAction,
   InsightGap, InsightsSummary, LoginRequest, LoginResponse, PatchFindingRequest,
   PatchFindingResponse, ReviewDetail, ReviewListItem, SourceKind, WorkflowNoteRequest,
-  WorkflowResponse,
+  VersionResponse, WorkflowResponse,
 } from "@/types/contract";
 import { ApiError } from "./api-error";
 import { mockRequest } from "./mockData";
@@ -134,6 +134,10 @@ export const api = {
   getReview: (id: string) => request<ReviewDetail>(`/reviews/${enc(id)}`),
   getFindings: (id: string) => request<ApiFinding[]>(`/reviews/${enc(id)}/findings`),
   updateFinding: (findingId: string, body: PatchFindingRequest) => request<PatchFindingResponse>(`/findings/${enc(findingId)}`, json("PATCH", body)),
+  getComments: (reviewId: string) => request<CommentResponse[]>(`/reviews/${enc(reviewId)}/comments`),
+  getActivity: (reviewId: string) => request<ActivityEvent[]>(`/reviews/${enc(reviewId)}/activity`),
+  getVersions: (reviewId: string) => request<VersionResponse[]>(`/reviews/${enc(reviewId)}/versions`),
+  getRecentActivity: (limit = 100) => request<ActivityEvent[]>(`/activity?limit=${limit}`),
   addComment: (reviewId: string, body: CreateCommentRequest) => request<CommentResponse>(`/reviews/${enc(reviewId)}/comments`, json("POST", body)),
   approveReview: (reviewId: string, body: WorkflowNoteRequest) => request<WorkflowResponse>(`/reviews/${enc(reviewId)}/approve`, json("POST", body)),
   requestChanges: (reviewId: string, body: WorkflowNoteRequest) => request<WorkflowResponse>(`/reviews/${enc(reviewId)}/request-changes`, json("POST", body)),

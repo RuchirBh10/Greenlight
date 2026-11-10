@@ -79,6 +79,7 @@
   "status": "in_review",
   "creator": "Aarav Mehta",
   "brand_kit_version": "v3",
+  "created_at": "2026-11-02T10:00:00Z",
   "updated_at": "2026-11-02T10:42:00Z"
 }
 ```
@@ -116,15 +117,18 @@
 
 ### Workflow
 
-`POST /reviews/{id}/comments`
+`POST /reviews/{id}/comments`: anyone who can open the review may comment.
 ```json
-// request
-{ "text": "Please confirm the delivery cities with legal." }
+// request. finding_id is optional: the comment is about one finding of this review
+{ "text": "Please confirm the delivery cities with legal.", "finding_id": "FD-1004" }
 
 // 201
-{ "id": "C-77", "author": "Harshit Verma",
+{ "id": "C-77", "author": "Harshit Verma", "role": "manager", "finding_id": "FD-1004",
   "text": "Please confirm the delivery cities with legal.", "created_at": "2026-11-02T11:05:00Z" }
 ```
+`text` must not be blank (422). `finding_id` must belong to the same review (422).
+
+`GET /reviews/{id}/comments` returns `CommentResponse[]`, oldest first. A reviewer's note when requesting changes is added to this thread automatically.
 
 `POST /reviews/{id}/approve` and `POST /reviews/{id}/request-changes` (reviewer only)
 ```json
@@ -158,6 +162,34 @@
   ] }
 ```
 
+### Activity and history
+
+`GET /reviews/{id}/activity` returns `ActivityEvent[]` for one review, **oldest first**. It uses the same visibility as the review.
+```json
+[
+  { "id": "E-41", "type": "review_submitted", "at": "2026-11-02T10:00:00Z",
+    "actor": { "id": "U-1", "name": "Aarav Mehta", "role": "creator" },
+    "summary": "Submitted for review (Brand Kit v3)", "reason": "",
+    "detail": { "brand_kit_version": "v3" }, "review_id": "CL-2084", "review_title": null },
+  { "id": "E-42", "type": "scan_completed", "at": "2026-11-02T10:00:02Z", "actor": null,
+    "summary": "Automated check finished: 3 potential issues (rules only)", "reason": "",
+    "detail": { "mode": "rules_only", "findings": 3, "dropped_unverified": 0 }, "review_id": "CL-2084", "review_title": null },
+  { "id": "E-45", "type": "finding_decision", "at": "2026-11-02T10:14:00Z",
+    "actor": { "id": "U-1", "name": "Aarav Mehta", "role": "creator" },
+    "summary": "Marked not applicable “#1”", "reason": "Approved by legal for this campaign.",
+    "detail": { "finding_id": "FD-1001", "action": "disputed", "quote": "#1" }, "review_id": "CL-2084", "review_title": null }
+]
+```
+`actor` is `null` for the system (the automated check). `type` is one of `review_submitted`, `scan_completed`, `content_edited`, `finding_decision`, `comment_added`, `status_changed`, `approved`, `changes_requested`. `summary` is ready to display. A `status_changed` event that only repeats an `approved` / `changes_requested` event is not listed twice. `comment_added` carries the comment text in `detail.text`.
+
+`GET /activity?limit=100` returns the same events across every review the caller can see, **newest first** (`limit` 1 to 200). `review_title` is filled in here.
+
+`GET /reviews/{id}/versions` returns `VersionResponse[]`, oldest first. Version 1 is what was submitted; each edit adds one.
+```json
+[ { "number": 2, "content": "Meet the Zippy Bottle today.", "reason": "Edited the flagged wording.",
+    "created_by": "Aarav Mehta", "created_at": "2026-11-02T10:14:00Z" } ]
+```
+
 ### Errors (same shape everywhere)
 
 ```json
@@ -169,10 +201,10 @@
 
 | Role | Can |
 |---|---|
-| creator | Submit drafts, view own findings, accept/edit/dispute, comment |
-| manager | View team queue, comment, assign, escalate, view insights |
-| reviewer | View escalated items with evidence, approve, request changes |
-| brand_admin | Manage the Brand Kit, view guideline-gap insights |
+| creator | Submit drafts, view own findings, accept/edit/dispute, comment on own reviews |
+| manager | View team queue, comment, view insights (assign and escalate: planned, v6.2) |
+| reviewer | View escalated items with evidence, comment, approve, request changes |
+| brand_admin | Manage the Brand Kit, view guideline-gap insights, comment |
 
 The AI has no role. It cannot approve, reject or change content.
 
@@ -206,9 +238,9 @@ Findings can only be decided while the review is `scanned`, `resolving` or `chan
 
 ## Gaps found while building (NOT implemented; need both of us to agree first)
 
-1. **No way to read comments.** `POST /reviews/{id}/comments` exists but nothing returns them. Suggest `GET /reviews/{id}/comments` -> `CommentResponse[]`.
-2. **No way to read the audit trail.** It is stored (actor, time, reason) but unreadable. The Audit history screen needs e.g. `GET /reviews/{id}/audit`.
-3. **No escalate/assign endpoint**, although the manager role lists "assign, escalate". Today a review reaches `in_review` automatically once every finding is resolved.
+1. ~~No way to read comments.~~ **Done (v6.1):** `GET /reviews/{id}/comments`.
+2. ~~No way to read the audit trail.~~ **Done (v6.1):** `GET /reviews/{id}/activity` and `GET /activity`.
+3. **No escalate/assign endpoint** (planned, v6.2), although the manager role lists "assign, escalate". Today a review reaches `in_review` automatically once every finding is resolved.
 4. **No `GET /auth/me`** to restore the session after a page refresh (the token alone does not carry the user's name).
 5. **No re-scan after edits.** Edits are applied to the text and recorded, but findings are not re-run.
 

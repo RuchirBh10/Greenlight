@@ -36,6 +36,7 @@ and that requesting changes without a note is rejected.
 
 ## Known gaps that need a backend endpoint
 
-- `GET /reviews/{id}/audit`: the activity list currently shows only what happened in this browser.
-- `GET /reviews/{id}/comments`: comments can be posted but not read back.
 - `PATCH /reviews/{id}/content`, a reopen action and `DELETE /brand-kit/sources/{id}` are not in the contract, so those controls are not shown.
+- Assign and escalate (planned, v6.2) and image or structured inputs (planned, v8) are not in the contract yet.
+
+History, comments and draft versions are read from the server (`/reviews/{id}/activity`, `/comments`, `/versions`, and `/activity` for the workspace-wide trail).

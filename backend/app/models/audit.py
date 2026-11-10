@@ -12,6 +12,7 @@ class Comment(Base):
     id: Mapped[str] = mapped_column(String(20), primary_key=True)
     review_id: Mapped[str] = mapped_column(ForeignKey("review.id"), index=True)
     author_id: Mapped[str] = mapped_column(ForeignKey("app_user.id"))
+    finding_id: Mapped[str | None] = mapped_column(ForeignKey("finding.id"), nullable=True)  # set when the comment is about one finding
     text: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

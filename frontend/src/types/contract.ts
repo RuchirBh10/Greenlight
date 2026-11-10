@@ -47,6 +47,7 @@ export interface ReviewDetail {
   status: ReviewApiStatus;
   creator: string;
   brand_kit_version: string;
+  created_at: string;
   updated_at: string;
 }
 
@@ -75,8 +76,27 @@ export interface ApiFinding {
 export interface PatchFindingRequest { action: FindingAction; reason: string; edited_text: string | null }
 export interface PatchFindingResponse { finding_id: string; decision: FindingDecision }
 
-export interface CreateCommentRequest { text: string }
-export interface CommentResponse { id: string; author: string; text: string; created_at: string }
+export interface CreateCommentRequest { text: string; finding_id?: string | null }
+export interface CommentResponse { id: string; author: string; role: UserRole; text: string; created_at: string; finding_id: string | null }
+
+export type ActivityEventType =
+  | "review_submitted" | "scan_completed" | "content_edited" | "finding_decision"
+  | "comment_added" | "status_changed" | "approved" | "changes_requested";
+export interface ActivityEvent {
+  id: string;
+  type: ActivityEventType;
+  at: string;
+  /** null = the system (the automated check). */
+  actor: { id: string; name: string; role: UserRole } | null;
+  /** Ready to display. */
+  summary: string;
+  reason: string;
+  detail: { quote?: string; text?: string; finding_id?: string; [key: string]: unknown };
+  review_id: string | null;
+  /** Filled in only by the workspace-wide feed. */
+  review_title: string | null;
+}
+export interface VersionResponse { number: number; content: string; reason: string; created_by: string | null; created_at: string }
 export interface WorkflowNoteRequest { note: string }
 export interface WorkflowResponse { id: string; status: ReviewApiStatus }
 export interface InsightsSummary {

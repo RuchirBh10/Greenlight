@@ -2,7 +2,8 @@ export type FindingSeverity = "High" | "Medium" | "Low";
 export type FindingStatus = "Open" | "Accepted" | "Edited" | "Disputed";
 export type ReviewStatus = "Needs attention" | "In review" | "Approved" | "Changes requested";
 export type AnalysisSource = "local-demo" | "api";
-export type AuditKind = "submitted" | "analysis" | "finding" | "edit" | "status";
+/** How the timeline and the history filter group events. */
+export type AuditKind = "submitted" | "analysis" | "finding" | "edit" | "comment" | "status";
 
 export const CHANNELS = ["Social media", "Website", "Email", "Presentation", "Advertisement", "Print"] as const;
 export const REVIEW_MODES = ["Full brand review", "Essential checks only"] as const;
@@ -33,15 +34,6 @@ export interface Finding {
   decisionReason?: string;
 }
 
-export interface AuditEntry {
-  id: string;
-  at: string;
-  actor: string;
-  kind: AuditKind;
-  message: string;
-  findingId?: string;
-}
-
 export interface Review {
   id: string;
   title: string;
@@ -58,7 +50,6 @@ export interface Review {
   source: AnalysisSource;
   summary?: string;
   findings: Finding[];
-  audit: AuditEntry[];
 }
 
 export type ReviewInput = { title: string; channel: string; content: string; intent?: string; brandKit: string; mode: string };

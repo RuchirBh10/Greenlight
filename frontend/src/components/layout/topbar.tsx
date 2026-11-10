@@ -1,6 +1,6 @@
 "use client";
 import { Command, Compass, Menu, Search } from "lucide-react";
-import { setTourOpen, tourStore } from "@/features/tour/store";
+import { TOUR_STEPS, setTourOpen, tourStore } from "@/features/tour/store";
 import { Avatar } from "@/components/ui";
 import { ROLE_LABEL, useIsDemo, useSession } from "@/lib/session";
 import { RoleSwitcher } from "./role-switcher";
@@ -30,7 +30,7 @@ export function Topbar({ onMenu, onSearch }: Props) {
         {demo && (
           <button onClick={() => setTourOpen(!tour.open)} aria-pressed={tour.open} title="Show or hide the guided tour"
             className={`mr-1 hidden items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition md:flex ${tour.open ? "bg-brand/10 text-brand" : "text-muted hover:bg-soft hover:text-ink"}`}>
-            <Compass size={15} /> Tour <span className="text-muted">{tourDone}/6</span>
+            <Compass size={15} /> Tour <span className="text-muted">{tourDone}/{TOUR_STEPS}</span>
           </button>
         )}
         <ThemeToggle />

@@ -30,7 +30,7 @@ def test_reviews_and_findings(client, h):
     assert set(listing[0]) == {"id", "title", "creator", "status", "finding_count", "updated_at"}
     assert listing[0]["creator"] == "Aarav Mehta"
     detail = client.get(f"/reviews/{created['id']}", headers=h["creator"]).json()
-    assert set(detail) == {"id", "title", "content", "status", "creator", "brand_kit_version", "updated_at"}
+    assert set(detail) == {"id", "title", "content", "status", "creator", "brand_kit_version", "created_at", "updated_at"}
     f = client.get(f"/reviews/{created['id']}/findings", headers=h["creator"]).json()[0]
     assert set(f) == FINDING_KEYS and set(f["span"]) == {"start", "end", "text"}
     assert set(f["source"]) == {"kind", "id", "version"} and set(f["suggestion"]) == {"text", "fact_id", "applied"}
@@ -44,7 +44,7 @@ def test_patch_finding_and_workflow(client, h):
                      json={"action": "disputed", "reason": "We hold a third-party award for this claim.", "edited_text": None})
     assert r.json() == {"finding_id": fid, "decision": {"action": "disputed", "reason": "We hold a third-party award for this claim.", "actor": "U-1"}}
     c = client.post(f"/reviews/{rid}/comments", headers=h["manager"], json={"text": "Please confirm the cities with legal."})
-    assert c.status_code == 201 and set(c.json()) == {"id", "author", "text", "created_at"} and c.json()["author"] == "Harshit Verma"
+    assert c.status_code == 201 and set(c.json()) == {"id", "author", "role", "text", "created_at", "finding_id"} and c.json()["author"] == "Harshit Verma"
     a = client.post(f"/reviews/{rid}/approve", headers=h["reviewer"], json={"note": "Looks good after edits."})
     assert a.json() == {"id": rid, "status": "approved"}
 

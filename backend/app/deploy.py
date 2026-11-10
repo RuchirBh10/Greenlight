@@ -4,7 +4,7 @@ so local development, tests and a normal server behave exactly as before.
 Why this exists: Vercel has no terminal and its disk is read-only, so the app prepares itself on start-up.
   1. picks a database URL (Vercel's Postgres integrations set DATABASE_URL or POSTGRES_URL),
   2. refuses to start with a weak JWT secret (a public API with a guessable secret is not safe),
-  3. creates the tables and the demo workspace the first time it runs.
+  3. applies database migrations and creates the demo workspace the first time it runs.
 """
 import logging
 import os
@@ -50,12 +50,12 @@ def bootstrap() -> None:
     if not ON_VERCEL:
         return
     try:
-        from app.database import Base, SessionLocal, ensure_extensions, engine
+        from app.database import SessionLocal
+        from app.migrations import prepare_database
         from app.models import User
         from app.seed import seed
 
-        ensure_extensions()
-        Base.metadata.create_all(engine)
+        prepare_database()
         with SessionLocal() as db:
             empty = db.query(User).first() is None
         if empty:

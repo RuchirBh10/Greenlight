@@ -8,9 +8,8 @@ import { markTour } from "@/features/tour/store";
 import { can, useSession } from "@/lib/session";
 import { approveReview, decideFinding, requestChanges, rewriteFinding, useReview, useReviewsLoaded } from "../lib/store";
 import type { FindingStatus } from "../types";
-import { AiDisclosureCard } from "./ai-disclosure-card";
 import { AnnotatedContent } from "./annotated-content";
-import { AuditTimeline } from "./audit-timeline";
+import { CollaborationPanel } from "./collaboration-panel";
 import { FindingEvidence } from "./finding-evidence";
 import { FindingList } from "./finding-list";
 import { ReviewOutcome } from "./review-outcome";
@@ -99,16 +98,7 @@ export function ReviewWorkspace({ id }: { id: string }) {
           <ReviewOutcome review={review} canDecide={can.decide(user?.role)} busy={busy}
             onApprove={note => run(async () => { const ok = await approveReview(id, note); if (!ok) throw new Error("Approval is blocked until every finding is edited or marked not applicable."); }, "Review approved. Every finding has a recorded decision.")}
             onRequestChanges={note => run(() => requestChanges(id, note), "Changes requested. The creator will see your note.", "info")} />
-          <details className="group rounded-xl border border-line bg-surface">
-            <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-3.5 text-sm font-semibold text-ink">
-              Details: AI use and activity <span className="text-xs font-normal text-muted group-open:hidden">Show</span><span className="hidden text-xs font-normal text-muted group-open:inline">Hide</span>
-            </summary>
-            <div className="space-y-5 border-t border-line p-4">
-              <AiDisclosureCard reviewId={id} />
-              <Card><AuditTimeline entries={review.audit} />
-                <p className="border-t border-line px-5 py-3 text-xs leading-5 text-muted">Shows what happened in this browser. The server keeps the authoritative audit trail.</p></Card>
-            </div>
-          </details>
+          <CollaborationPanel review={review} onSelectFinding={pick} />
         </div>
       </div>
       <p className="mt-8 text-center text-xs text-muted">

@@ -4,10 +4,11 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.user import User
+from app.schemas.activity import ActivityEvent, VersionOut
 from app.schemas.finding import FindingOut
 from app.schemas.review import (AiDisclosure, CommentCreate, CommentOut, ReviewCreate, ReviewCreated, ReviewDetail,
                                 ReviewListItem)
-from app.services import ai_disclosure, workflow_service as wf
+from app.services import activity_service, ai_disclosure, workflow_service as wf
 
 router = APIRouter(prefix="/reviews", tags=["reviews"])
 
@@ -35,6 +36,21 @@ def get_findings(review_id: str, user: User = Depends(get_current_user), db: Ses
 @router.post("/{review_id}/comments", response_model=CommentOut, status_code=201)
 def add_comment(review_id: str, body: CommentCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return wf.add_comment(db, user, review_id, body)
+
+
+@router.get("/{review_id}/comments", response_model=list[CommentOut])
+def get_comments(review_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return activity_service.comments(db, user, review_id)
+
+
+@router.get("/{review_id}/activity", response_model=list[ActivityEvent])
+def get_activity(review_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return activity_service.activity(db, user, review_id)
+
+
+@router.get("/{review_id}/versions", response_model=list[VersionOut])
+def get_versions(review_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return activity_service.versions(db, user, review_id)
 
 
 @router.get("/{review_id}/ai-disclosure", response_model=AiDisclosure, response_model_exclude_none=True)

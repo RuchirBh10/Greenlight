@@ -1,3 +1,4 @@
+# Runtime dependencies only. This is what Vercel installs (it must stay small).
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30
 pydantic>=2.8
