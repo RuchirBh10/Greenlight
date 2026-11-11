@@ -6,7 +6,7 @@ if (mode === "live") process.env.NEXT_PUBLIC_API_URL = process.env.GREENLIGHT_AP
 
 (async () => {
   const { reporter } = await import("./harness");
-  const modules = [await import("./collaboration.test"), await import("./routing.test")];
+  const modules = [await import("./collaboration.test"), await import("./routing.test"), await import("./report.test")];
   let passed = 0, failed = 0;
   for (const m of modules) {
     console.log(`\n${m.default.name} (${mode})`);

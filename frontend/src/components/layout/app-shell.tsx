@@ -42,9 +42,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             <aside className="relative h-full w-[280px] animate-fade-in shadow-2xl"><Sidebar onNavigate={() => setMobileOpen(false)} /></aside>
           </div>
         )}
-        <div className="lg:pl-[256px]">
+        <div className="lg:pl-[256px] print:pl-0">
           <Topbar onMenu={() => setMobileOpen(true)} onSearch={() => setPaletteOpen(true)} />
-          <main className="mx-auto min-h-[calc(100vh-110px)] max-w-[1360px] px-4 py-7 md:px-8 md:py-9">
+          <main className="mx-auto min-h-[calc(100vh-110px)] max-w-[1360px] px-4 py-7 md:px-8 md:py-9 print:max-w-none print:p-0">
             <TourBar />
             {loadError && (
               <div role="alert" className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-danger/25 bg-danger/10 p-3.5 text-sm text-danger">

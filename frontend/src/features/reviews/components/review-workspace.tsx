@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Printer, SearchX } from "lucide-react";
+import { ArrowLeft, FileText, SearchX } from "lucide-react";
 import { Button, Card, EmptyState, PageHeader, Skeleton, useToast, buttonClass } from "@/components/ui";
 import { relativeTime } from "@/lib/format";
 import { markTour } from "@/features/tour/store";
@@ -83,7 +83,7 @@ export function ReviewWorkspace({ id }: { id: string }) {
       <Link href="/reviews" className="mb-5 inline-flex items-center gap-2 text-xs font-semibold text-muted transition hover:text-brand"><ArrowLeft size={14} /> All reviews</Link>
       <PageHeader eyebrow={`${review.id} · ${review.channel}`} title={review.title}
         description={`Submitted by ${review.creator} · updated ${relativeTime(review.updatedAt)}`}
-        actions={<Button variant="secondary" onClick={() => window.print()}><Printer size={15} /> Print report</Button>} />
+        actions={<Link href={`/reviews/${id}/report`} className={buttonClass("secondary", "md")}><FileText size={15} /> Decision report</Link>} />
 
       <ReviewSummary review={review} />
 

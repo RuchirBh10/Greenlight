@@ -17,7 +17,7 @@ const STEPS: Step[] = [
   { id: "resolve", role: "creator", base: "/reviews/", title: "Resolve every finding",
     hint: "Apply a suggested fix, write your own, or dispute it with a reason. Then it goes to a reviewer.", here: "Apply a suggestion or dispute it with a reason. Repeat until the progress bar is full." },
   { id: "audit", role: "creator", base: "/reviews/", title: "Open the audit trail",
-    hint: "Every action on a review, with who did it, when and why. Add a comment, compare versions, see what AI was used.", here: "Open the Activity tab on the right. Try Discussion and Changes too." },
+    hint: "Every action on a review, with who did it, when and why. Then open the printable Decision report.", here: "Open the Activity tab on the right. Try Changes, and the Decision report button at the top." },
   { id: "approve", role: "reviewer", base: "/approvals", title: "Approve as a reviewer",
     hint: "Only a person can approve or send a draft back. The software never does.", here: "Press Approve on a review that is waiting for you." },
   { id: "escalation", role: "brand_admin", base: "/reviews/", title: "Resolve an escalation",
